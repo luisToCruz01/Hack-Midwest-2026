@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Petrona:ital,wght@0,600;1,600&family=Poppins:wght@400&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./styles.css" />
@@ -63,35 +63,43 @@
     <main id="top">
       <!-- HERO -->
       <section class="hero">
-        <div class="glow glow-a" aria-hidden="true"></div>
-        <div class="glow glow-b" aria-hidden="true"></div>
+        <div class="hero-scene">
+          <div class="hero-back" aria-hidden="true">
+            <img src="./assets/hero-bg.webp" alt="" class="hero-img" />
+            <div class="hero-word"><span>Fieldcast</span></div>
+          </div>
+          <div class="hero-front">
+            <img src="./assets/hero-fg.webp" alt="" class="hero-img" aria-hidden="true" />
+            <div class="hero-copy">
+              <p class="eyebrow hero-in"><span class="dot dot-live"></span> Built for USDA facilities</p>
+              <h1 class="hero-in" style="--d: 80ms">
+                Close the right buildings. Tell the right people.
+                <em>Before they leave home.</em>
+              </h1>
+              <p class="lede hero-in" style="--d: 160ms">
+                Fieldcast reads live National Weather Service alerts alongside road, school and
+                air-quality signals, scores the threat against each facility, and hands the manager
+                a graded recommendation with every reason attached. One approval, and every
+                affected employee hears about it on the right channel.
+              </p>
+              <div class="hero-actions hero-in" style="--d: 240ms">
+                <a class="btn btn-forest" href="../login.html">
+                  <span>Open dashboard</span>
+                  <span class="btn-icon" aria-hidden="true">↗</span>
+                </a>
+                <a class="btn btn-ghost" href="#how">See how it works</a>
+              </div>
+            </div>
+          </div>
+          <div class="hero-fade" aria-hidden="true"></div>
+        </div>
 
         <div class="container hero-grid">
-          <div class="hero-copy reveal">
-            <p class="eyebrow"><span class="dot dot-live"></span> Built for USDA facilities</p>
-            <h1>
-              Close the right buildings. Tell the right people.<br />
-              <em>Before they leave home.</em>
-            </h1>
-            <p class="lede">
-              Fieldcast reads live National Weather Service alerts alongside road, school and
-              air-quality signals, scores the threat against each facility, and hands the manager
-              a graded recommendation with every reason attached. One approval, and every
-              affected employee hears about it on the right channel.
-            </p>
-            <div class="hero-actions">
-              <a class="btn btn-primary" href="../login.html">
-                <span>Open dashboard</span>
-                <span class="btn-icon" aria-hidden="true">↗</span>
-              </a>
-              <a class="btn btn-ghost" href="#how">See how it works</a>
-            </div>
-            <dl class="hero-stats">
-              <div><dt>5</dt><dd>graded postures, not a yes/no</dd></div>
-              <div><dt>1</dt><dd>place for every input, timestamped</dd></div>
-              <div><dt>0</dt><dd>decisions made without a human</dd></div>
-            </dl>
-          </div>
+          <dl class="hero-stats reveal">
+            <div><dt>5</dt><dd>graded postures, not a yes/no</dd></div>
+            <div><dt>1</dt><dd>place for every input, timestamped</dd></div>
+            <div><dt>0</dt><dd>decisions made without a human</dd></div>
+          </dl>
 
           <!-- Live NWS panel -->
           <div class="bezel hero-panel reveal" style="--d: 120ms">

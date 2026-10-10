@@ -156,6 +156,17 @@ const observer = new IntersectionObserver(
 );
 document.querySelectorAll(".reveal").forEach((el) => observer.observe(el));
 
+// ---------- hero parallax: the giant word drifts behind the mountains ----------
+
+const heroWord = document.querySelector(".hero-word");
+if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  addEventListener(
+    "scroll",
+    () => (heroWord.style.transform = `translateY(${Math.min(scrollY, 1000) * 0.35}px)`),
+    { passive: true },
+  );
+}
+
 // ---------- mobile menu ----------
 
 const burger = document.querySelector(".burger");
