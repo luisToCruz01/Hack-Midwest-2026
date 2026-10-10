@@ -3,19 +3,12 @@ const pageViews = document.querySelectorAll("[data-view]");
 const employeeRows = document.querySelector("#employee-rows");
 const employeeSearch = document.querySelector("#employee-search");
 const employeeFilter = document.querySelector("#employee-filter");
-const employeeDialog = document.querySelector("#employee-dialog");
-const employeeForm = document.querySelector("#employee-form");
-const scheduleDialog = document.querySelector("#schedule-dialog");
-const scheduleForm = document.querySelector("#schedule-form");
 const alertDialog = document.querySelector("#alert-dialog");
 const alertForm = document.querySelector("#alert-form");
 
-let employees = [
-  { id: 1, name: "Alex Morgan", email: "alex.morgan@example.com", role: "Site Supervisor", status: "Active", added: "Oct 02, 2026", schedule: { days: ["Mon", "Tue", "Wed", "Thu", "Fri"], startTime: "07:00", endTime: "15:30" } },
-  { id: 2, name: "Jordan Lee", email: "jordan.lee@example.com", role: "Safety Coordinator", status: "Active", added: "Sep 28, 2026", schedule: { days: ["Mon", "Tue", "Wed", "Thu", "Fri"], startTime: "08:00", endTime: "16:30" } },
-  { id: 3, name: "Casey Patel", email: "casey.patel@example.com", role: "Equipment Operator", status: "Active", added: "Sep 21, 2026", schedule: { days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], startTime: "06:00", endTime: "14:30" } },
-  { id: 4, name: "Riley Chen", email: "riley.chen@example.com", role: "Field Technician", status: "Inactive", added: "Sep 14, 2026", schedule: { days: ["Tue", "Wed", "Thu", "Fri", "Sat"], startTime: "09:00", endTime: "17:30" } },
-];
+let employees = [];
+let employeesLoading = true;
+let employeeLoadError = "";
 
 let alerts = [
   { id: 1, title: "Heat advisory in effect", message: "High temperatures are expected this afternoon. Ensure crews take scheduled water breaks and monitor for signs of heat stress.", severity: "High", status: "Open", time: "Today, 9:42 AM", location: "North work area" },
@@ -34,9 +27,6 @@ let workSite = {
   longitude: "-94.5786",
 };
 
-let editingEmployeeId = null;
-let editingScheduleEmployeeId = null;
-let nextEmployeeId = 5;
 let nextAlertId = 4;
 
 function escapeClassName(value) {
@@ -64,6 +54,74 @@ function describeSchedule(schedule) {
   return `${schedule.days.join(", ")} · ${formatScheduleTime(schedule.startTime)}–${formatScheduleTime(schedule.endTime)}`;
 }
 
+function expandDaysOfWeek(range) {
+  const week = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const [start, end] = range.split("-");
+  let dayIndex = week.indexOf(start);
+  const endIndex = week.indexOf(end);
+  if (dayIndex < 0 || endIndex < 0) throw new Error(`Invalid workday range: ${range}`);
+
+  const days = [];
+  while (true) {
+    days.push(week[dayIndex]);
+    if (dayIndex === endIndex) return days;
+    dayIndex = (dayIndex + 1) % week.length;
+  }
+}
+
+function mapDatabaseEmployee(employee) {
+  return {
+    id: employee.userId,
+    name: employee.fullName,
+    schedule: {
+      days: expandDaysOfWeek(employee.daysOfWeek),
+      startTime: employee.shiftStart,
+      endTime: employee.shiftEnd,
+    },
+  };
+}
+
+function getWorkSiteClock(date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: workSite.timezone || undefined,
+    weekday: "short",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+
+  return {
+    date: `${values.year}-${values.month}-${values.day}`,
+    weekday: values.weekday,
+    minutes: Number(values.hour) * 60 + Number(values.minute),
+  };
+}
+
+function getEmployeeStatus(employee, now = new Date()) {
+  const clock = getWorkSiteClock(now);
+
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const todayIndex = dayNames.indexOf(clock.weekday);
+  const todayName = clock.weekday;
+  const yesterdayName = dayNames[(todayIndex + 6) % 7];
+  const [startHour, startMinute] = employee.schedule.startTime.split(":").map(Number);
+  const [endHour, endMinute] = employee.schedule.endTime.split(":").map(Number);
+  const startMinutes = startHour * 60 + startMinute;
+  const endMinutes = endHour * 60 + endMinute;
+  const overnightShift = endMinutes <= startMinutes;
+  const onTodayShift = employee.schedule.days.includes(todayName)
+    && (overnightShift ? clock.minutes >= startMinutes : clock.minutes >= startMinutes && clock.minutes < endMinutes);
+  const onOvernightRemainder = overnightShift
+    && employee.schedule.days.includes(yesterdayName)
+    && clock.minutes < endMinutes;
+
+  return onTodayShift || onOvernightRemainder ? "Working" : "Off shift";
+}
+
 function setPage(selectedPage) {
   for (const button of navigationButtons) {
     if (button.dataset.page === selectedPage) {
@@ -76,17 +134,20 @@ function setPage(selectedPage) {
   for (const pageView of pageViews) {
     pageView.hidden = pageView.dataset.view !== selectedPage;
   }
+
+  if (selectedPage === "overview") renderOverview();
+  if (selectedPage === "employees") renderEmployees();
 }
 
 function renderOverview() {
-  const activeEmployees = employees.filter((employee) => employee.status === "Active").length;
+  const workingEmployees = employees.filter((employee) => getEmployeeStatus(employee) === "Working").length;
   const openAlerts = alerts.filter((alert) => alert.status !== "Resolved").length;
   const addressParts = [workSite.city, workSite.state, workSite.postalCode].filter(Boolean);
   const streetAddress = workSite.address || "Address not set";
   const fullAddress = [streetAddress, addressParts.join(" ")].filter(Boolean).join("\n");
 
   document.querySelector("#employee-count").textContent = String(employees.length);
-  document.querySelector("#active-employee-note").textContent = `${activeEmployees} active team member${activeEmployees === 1 ? "" : "s"}`;
+  document.querySelector("#active-employee-note").textContent = `${workingEmployees} working now · ${employees.length - workingEmployees} off shift`;
   document.querySelector("#open-alert-count").textContent = String(openAlerts);
   document.querySelector("#nav-alert-count").textContent = String(openAlerts);
   document.querySelector("#overview-site-name").textContent = workSite.name || "Work site not set";
@@ -156,14 +217,19 @@ function renderEmployees() {
   const search = employeeSearch.value.trim().toLowerCase();
   const selectedStatus = employeeFilter.value;
   const filteredEmployees = employees.filter((employee) => {
-    const matchesSearch = [employee.name, employee.email, employee.role]
+    const employeeStatus = getEmployeeStatus(employee);
+    const matchesSearch = [employee.name, employee.id, employeeStatus]
       .some((value) => value.toLowerCase().includes(search));
-    const matchesStatus = selectedStatus === "all" || employee.status === selectedStatus;
+    const matchesStatus = selectedStatus === "all" || employeeStatus === selectedStatus;
     return matchesSearch && matchesStatus;
   });
 
   employeeRows.replaceChildren();
-  document.querySelector("#employee-empty").hidden = filteredEmployees.length > 0;
+  const emptyMessage = document.querySelector("#employee-empty");
+  emptyMessage.textContent = employeesLoading
+    ? "Loading employees..."
+    : employeeLoadError || "No employees match your search.";
+  emptyMessage.hidden = filteredEmployees.length > 0;
 
   for (const employee of filteredEmployees) {
     const row = document.createElement("tr");
@@ -172,17 +238,10 @@ function renderEmployees() {
     const avatar = document.createElement("span");
     const personCopy = document.createElement("div");
     const name = document.createElement("span");
-    const email = document.createElement("span");
-    const role = document.createElement("td");
+    const userId = document.createElement("span");
     const schedule = document.createElement("td");
     const status = document.createElement("td");
     const statusPill = document.createElement("span");
-    const date = document.createElement("td");
-    const actions = document.createElement("td");
-    const actionGroup = document.createElement("div");
-    const editButton = document.createElement("button");
-    const scheduleButton = document.createElement("button");
-    const statusButton = document.createElement("button");
 
     person.className = "employee-cell";
     avatar.className = "avatar";
@@ -191,33 +250,17 @@ function renderEmployees() {
     personCopy.className = "employee-copy";
     name.className = "employee-name";
     name.textContent = employee.name;
-    email.className = "employee-email";
-    email.textContent = employee.email;
-    personCopy.append(name, email);
+    userId.className = "employee-id";
+    userId.textContent = `ID ${employee.id}`;
+    personCopy.append(name, userId);
     person.append(avatar, personCopy);
     personCell.append(person);
-    role.textContent = employee.role;
     schedule.textContent = describeSchedule(employee.schedule);
-    statusPill.className = `status-pill status-${escapeClassName(employee.status)}`;
-    statusPill.textContent = employee.status;
+    const currentStatus = getEmployeeStatus(employee);
+    statusPill.className = `status-pill status-${escapeClassName(currentStatus)}`;
+    statusPill.textContent = currentStatus;
     status.append(statusPill);
-    date.textContent = employee.added;
-    actionGroup.className = "row-actions";
-    editButton.className = "small-action";
-    editButton.type = "button";
-    editButton.dataset.editEmployee = String(employee.id);
-    editButton.textContent = "Edit";
-    scheduleButton.className = "small-action";
-    scheduleButton.type = "button";
-    scheduleButton.dataset.editSchedule = String(employee.id);
-    scheduleButton.textContent = "Schedule";
-    statusButton.className = "small-action";
-    statusButton.type = "button";
-    statusButton.dataset.toggleEmployee = String(employee.id);
-    statusButton.textContent = employee.status === "Active" ? "Deactivate" : "Activate";
-    actionGroup.append(editButton, scheduleButton, statusButton);
-    actions.append(actionGroup);
-    row.append(personCell, role, schedule, status, date, actions);
+    row.append(personCell, schedule, status);
     employeeRows.append(row);
   }
 }
@@ -292,41 +335,6 @@ function renderAll() {
   renderAlerts();
 }
 
-function openEmployeeDialog(employee = null) {
-  editingEmployeeId = employee?.id ?? null;
-  employeeForm.reset();
-  document.querySelector("#employee-feedback").textContent = "";
-  document.querySelector("#employee-dialog-title").textContent = employee ? "Edit employee" : "Add employee";
-
-  if (employee) {
-    employeeForm.elements.name.value = employee.name;
-    employeeForm.elements.email.value = employee.email;
-    employeeForm.elements.role.value = employee.role;
-  }
-
-  employeeDialog.showModal();
-  employeeForm.elements.name.focus();
-}
-
-function openScheduleDialog(employee) {
-  editingScheduleEmployeeId = employee.id;
-  scheduleForm.reset();
-  document.querySelector("#schedule-feedback").textContent = "";
-  document.querySelector("#schedule-employee-name").textContent = `Set work days and shift hours for ${employee.name}.`;
-  document.querySelector("#schedule-dialog-title").textContent = `Schedule · ${employee.name}`;
-
-  for (const dayInput of scheduleForm.querySelectorAll('input[name="days"]')) {
-    dayInput.checked = employee.schedule.days.includes(dayInput.value);
-  }
-  scheduleForm.elements.startTime.value = employee.schedule.startTime;
-  scheduleForm.elements.endTime.value = employee.schedule.endTime;
-  scheduleDialog.showModal();
-}
-
-function formatToday() {
-  return new Intl.DateTimeFormat("en", { month: "short", day: "2-digit", year: "numeric" }).format(new Date());
-}
-
 for (const button of navigationButtons) {
   button.addEventListener("click", () => setPage(button.dataset.page));
 }
@@ -335,7 +343,6 @@ for (const button of document.querySelectorAll("[data-open-page]")) {
   button.addEventListener("click", () => setPage(button.dataset.openPage));
 }
 
-document.querySelector("#add-employee-button").addEventListener("click", () => openEmployeeDialog());
 document.querySelector("#add-alert-button").addEventListener("click", () => {
   alertForm.reset();
   alertDialog.showModal();
@@ -350,29 +357,6 @@ employeeSearch.addEventListener("input", renderEmployees);
 employeeFilter.addEventListener("change", renderEmployees);
 document.querySelector("#alert-filter").addEventListener("change", renderAlerts);
 
-employeeRows.addEventListener("click", (event) => {
-  const target = event.target;
-  if (!(target instanceof HTMLButtonElement)) return;
-
-  if (target.dataset.editEmployee) {
-    const employee = employees.find((item) => item.id === Number(target.dataset.editEmployee));
-    if (employee) openEmployeeDialog(employee);
-  }
-
-  if (target.dataset.editSchedule) {
-    const employee = employees.find((item) => item.id === Number(target.dataset.editSchedule));
-    if (employee) openScheduleDialog(employee);
-  }
-
-  if (target.dataset.toggleEmployee) {
-    const employee = employees.find((item) => item.id === Number(target.dataset.toggleEmployee));
-    if (employee) {
-      employee.status = employee.status === "Active" ? "Inactive" : "Active";
-      renderAll();
-    }
-  }
-});
-
 document.querySelector("#alert-list").addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLButtonElement) || !target.dataset.alertId) return;
@@ -382,64 +366,6 @@ document.querySelector("#alert-list").addEventListener("click", (event) => {
     alert.status = target.dataset.alertStatus;
     renderAll();
   }
-});
-
-employeeForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const formData = new FormData(employeeForm);
-  const name = String(formData.get("name")).trim();
-  const email = String(formData.get("email")).trim();
-  const role = String(formData.get("role")).trim();
-  const duplicateEmail = employees.some(
-    (employee) => employee.email.toLowerCase() === email.toLowerCase() && employee.id !== editingEmployeeId,
-  );
-
-  if (duplicateEmail) {
-    document.querySelector("#employee-feedback").textContent = "That email is already in the employee list.";
-    return;
-  }
-
-  if (editingEmployeeId !== null) {
-    const employee = employees.find((item) => item.id === editingEmployeeId);
-    if (employee) Object.assign(employee, { name, email, role });
-  } else {
-    employees.unshift({
-      id: nextEmployeeId++,
-      name,
-      email,
-      role,
-      status: "Active",
-      added: formatToday(),
-      schedule: { days: ["Mon", "Tue", "Wed", "Thu", "Fri"], startTime: "08:00", endTime: "16:30" },
-    });
-  }
-
-  employeeDialog.close();
-  renderAll();
-});
-
-scheduleForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const employee = employees.find((item) => item.id === editingScheduleEmployeeId);
-  if (!employee) {
-    document.querySelector("#schedule-feedback").textContent = "Employee not found. Close and try again.";
-    return;
-  }
-
-  const formData = new FormData(scheduleForm);
-  const days = formData.getAll("days").map(String);
-  if (days.length === 0) {
-    document.querySelector("#schedule-feedback").textContent = "Select at least one work day.";
-    return;
-  }
-
-  employee.schedule = {
-    days,
-    startTime: String(formData.get("startTime")),
-    endTime: String(formData.get("endTime")),
-  };
-  scheduleDialog.close();
-  renderAll();
 });
 
 alertForm.addEventListener("submit", (event) => {
@@ -456,6 +382,10 @@ alertForm.addEventListener("submit", (event) => {
   });
   alertDialog.close();
   renderAll();
+  window.setInterval(() => {
+    renderOverview();
+    renderEmployees();
+  }, 60_000);
 });
 
 const worksiteForm = document.querySelector("#worksite-form");
@@ -468,6 +398,7 @@ worksiteForm.addEventListener("submit", (event) => {
   const formData = new FormData(worksiteForm);
   const latitude = String(formData.get("latitude")).trim();
   const longitude = String(formData.get("longitude")).trim();
+  const timezone = String(formData.get("timezone")).trim();
   const feedback = document.querySelector("#worksite-feedback");
 
   if (Boolean(latitude) !== Boolean(longitude)) {
@@ -475,11 +406,40 @@ worksiteForm.addEventListener("submit", (event) => {
     return;
   }
 
+  if (timezone) {
+    try {
+      new Intl.DateTimeFormat("en", { timeZone: timezone }).format();
+    } catch {
+      feedback.textContent = "Enter a valid time zone, such as America/Chicago.";
+      return;
+    }
+  }
+
   workSite = Object.fromEntries(
     [...formData.entries()].map(([key, value]) => [key, String(value).trim()]),
   );
   feedback.textContent = "Work site details updated for this session.";
   renderOverview();
+  renderEmployees();
 });
 
 renderAll();
+loadEmployees();
+
+async function loadEmployees() {
+  try {
+    const response = await fetch("/api/employees");
+    if (!response.ok) throw new Error(`Employee API returned HTTP ${response.status}.`);
+    const records = await response.json();
+    if (!Array.isArray(records)) throw new Error("Employee API response must be an array.");
+
+    employees = records.map(mapDatabaseEmployee);
+    employeesLoading = false;
+    renderAll();
+  } catch (error) {
+    employeesLoading = false;
+    employeeLoadError = "Unable to load employees from the database. Check that the dashboard server and database are available.";
+    console.error("Failed to load employees from the database.", error);
+    renderAll();
+  }
+}

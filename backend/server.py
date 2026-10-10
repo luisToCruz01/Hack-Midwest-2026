@@ -1,5 +1,6 @@
 import json
 import os
+import sqlite3
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock
@@ -8,6 +9,7 @@ from urllib.parse import urlsplit
 
 PROJECT_DIRECTORY = Path(__file__).resolve().parent.parent
 FRONTEND_DIRECTORY = PROJECT_DIRECTORY / "frontend"
+DATABASE_PATH = PROJECT_DIRECTORY / "database" / "fieldcast.db"
 HOST = os.environ.get("HOST", "127.0.0.1")
 PORT = int(os.environ.get("PORT", "3000"))
 MAX_REQUEST_BYTES = 16_384
@@ -26,6 +28,34 @@ class FieldcastHandler(SimpleHTTPRequestHandler):
 
         if route == "/api/health":
             self.send_json({"status": "ok", "storage": "in-memory"})
+            return
+
+        if route == "/api/employees":
+            try:
+                database_uri = f"{DATABASE_PATH.as_uri()}?mode=ro"
+                with sqlite3.connect(database_uri, uri=True) as database:
+                    employees = database.execute(
+                        """
+                        SELECT user_id, full_name, shift_start, shift_end, days_of_week
+                        FROM employees
+                        ORDER BY full_name COLLATE NOCASE
+                        """
+                    ).fetchall()
+            except sqlite3.Error as error:
+                self.log_error("Unable to read employee database: %s", error)
+                self.send_json({"error": "Unable to load employees from the database."}, status=500)
+                return
+
+            self.send_json([
+                {
+                    "userId": user_id,
+                    "fullName": full_name,
+                    "shiftStart": shift_start,
+                    "shiftEnd": shift_end,
+                    "daysOfWeek": days_of_week,
+                }
+                for user_id, full_name, shift_start, shift_end, days_of_week in employees
+            ])
             return
 
         if route == "/api/entries":

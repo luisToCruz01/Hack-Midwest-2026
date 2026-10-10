@@ -46,7 +46,7 @@
             <article class="metric-card">
               <div class="card-label"><span class="card-icon icon-green" aria-hidden="true">◎</span> Employees</div>
               <p class="metric-value" id="employee-count">0</p>
-              <p class="metric-note" id="active-employee-note">0 active team members</p>
+              <p class="metric-note" id="active-employee-note">0 working now · 0 on leave</p>
             </article>
             <article class="metric-card">
               <div class="card-label"><span class="card-icon icon-amber" aria-hidden="true">!</span> Open alerts</div>
@@ -88,7 +88,7 @@
               <dl class="site-details" id="overview-site-details"></dl>
             </section>
           </div>
-          <p class="prototype-note">Prototype dashboard · Sample information is stored only in this browser session.</p>
+          <p class="prototype-note">Dashboard prototype · Alerts and work-site edits are temporary; the employee roster comes from the database.</p>
         </section>
 
         <section class="page-view" data-view="employees" aria-labelledby="employees-title" hidden>
@@ -96,35 +96,34 @@
             <div>
               <p class="eyebrow">ADMIN CONSOLE <span class="eyebrow-dot"></span> TEAM</p>
               <h1 id="employees-title">Employees</h1>
-              <p class="page-description">Manage your team directory and employee status.</p>
+              <p class="page-description">Browse the employee roster, schedules, and current shift status.</p>
             </div>
-            <button class="primary-button" id="add-employee-button" type="button">＋ Add employee</button>
           </div>
           <section class="content-card table-card" aria-label="Employee directory">
             <div class="table-toolbar">
               <label class="search-field">
                 <span class="visually-hidden">Search employees</span>
                 <span aria-hidden="true">⌕</span>
-                <input id="employee-search" type="search" placeholder="Search name, email, or role" />
+                <input id="employee-search" type="search" placeholder="Search name or user ID" />
               </label>
               <label class="filter-field">
                 <span class="visually-hidden">Filter employees by status</span>
                 <select id="employee-filter">
                   <option value="all">All employees</option>
-                  <option value="Active">Active</option>
-                  <option value="Inactive">Inactive</option>
+                  <option value="Working">Working</option>
+                  <option value="Off shift">Off shift</option>
                 </select>
               </label>
             </div>
             <div class="table-scroll">
               <table>
                 <thead>
-                  <tr><th scope="col">Employee</th><th scope="col">Role</th><th scope="col">Schedule</th><th scope="col">Status</th><th scope="col">Added</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
+                  <tr><th scope="col">Employee</th><th scope="col">Schedule</th><th scope="col">Status</th></tr>
                 </thead>
                 <tbody id="employee-rows"></tbody>
               </table>
             </div>
-            <p class="table-empty" id="employee-empty" hidden>No employees match your search.</p>
+            <p class="table-empty" id="employee-empty" aria-live="polite" hidden></p>
           </section>
         </section>
 
@@ -187,20 +186,6 @@
         </section>
       </main>
 
-      <dialog class="modal" id="employee-dialog" aria-labelledby="employee-dialog-title">
-        <form class="modal-form" id="employee-form">
-          <div class="card-heading">
-            <div><p class="eyebrow">TEAM DIRECTORY</p><h2 id="employee-dialog-title">Add employee</h2></div>
-            <button class="icon-button" type="button" data-close-dialog aria-label="Close dialog">×</button>
-          </div>
-          <label class="field">Full name<input name="name" maxlength="100" required /></label>
-          <label class="field">Email address<input name="email" type="email" maxlength="160" required /></label>
-          <label class="field">Role<input name="role" maxlength="80" placeholder="Employee" required /></label>
-          <p class="form-feedback" id="employee-feedback" role="status"></p>
-          <div class="form-actions"><button class="secondary-button" type="button" data-close-dialog>Cancel</button><button class="primary-button" type="submit">Save employee</button></div>
-        </form>
-      </dialog>
-
       <dialog class="modal" id="alert-dialog" aria-labelledby="alert-dialog-title">
         <form class="modal-form" id="alert-form">
           <div class="card-heading">
@@ -211,34 +196,6 @@
           <label class="field">Details<textarea name="message" maxlength="1000" rows="4" required></textarea></label>
           <label class="field">Severity<select name="severity"><option>Low</option><option selected>Medium</option><option>High</option></select></label>
           <div class="form-actions"><button class="secondary-button" type="button" data-close-dialog>Cancel</button><button class="primary-button" type="submit">Create alert</button></div>
-        </form>
-      </dialog>
-
-      <dialog class="modal" id="schedule-dialog" aria-labelledby="schedule-dialog-title">
-        <form class="modal-form" id="schedule-form">
-          <div class="card-heading">
-            <div><p class="eyebrow">EMPLOYEE SCHEDULE</p><h2 id="schedule-dialog-title">Edit schedule</h2></div>
-            <button class="icon-button" type="button" data-close-dialog aria-label="Close dialog">×</button>
-          </div>
-          <p class="page-description" id="schedule-employee-name"></p>
-          <fieldset class="schedule-days">
-            <legend>Work days</legend>
-            <div class="day-options">
-              <label><input type="checkbox" name="days" value="Mon" /> Mon</label>
-              <label><input type="checkbox" name="days" value="Tue" /> Tue</label>
-              <label><input type="checkbox" name="days" value="Wed" /> Wed</label>
-              <label><input type="checkbox" name="days" value="Thu" /> Thu</label>
-              <label><input type="checkbox" name="days" value="Fri" /> Fri</label>
-              <label><input type="checkbox" name="days" value="Sat" /> Sat</label>
-              <label><input type="checkbox" name="days" value="Sun" /> Sun</label>
-            </div>
-          </fieldset>
-          <div class="form-grid">
-            <label class="field">Shift starts<input name="startTime" type="time" required /></label>
-            <label class="field">Shift ends<input name="endTime" type="time" required /></label>
-          </div>
-          <p class="form-feedback" id="schedule-feedback" role="status"></p>
-          <div class="form-actions"><button class="secondary-button" type="button" data-close-dialog>Cancel</button><button class="primary-button" type="submit">Save schedule</button></div>
         </form>
       </dialog>
 

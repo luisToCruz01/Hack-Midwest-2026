@@ -19,9 +19,12 @@ python backend/server.py
 Open <http://127.0.0.1:3000>. Set the `PORT` environment variable to use a
 different port.
 
-The dashboard’s employees, schedules, alerts, and work-site edits are sample
-frontend state and reset when the page reloads. The starter `GET /api/entries`
-and `POST /api/entries` endpoints also keep data in memory only.
+The Employees page reads the employee roster from SQLite through
+`GET /api/employees`. Employee details shown there come from the database;
+working/off-shift status is calculated from each employee's workdays and shift
+times. Alerts and work-site edits are sample frontend state and reset when the
+page reloads. The starter `GET /api/entries` and `POST /api/entries` endpoints
+also keep data in memory only.
 
 ## Employee database
 
