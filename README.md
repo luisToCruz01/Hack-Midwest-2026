@@ -42,7 +42,9 @@ snapshots, and SQLite-backed field reports.
 and 30 employees per location (6,000 employees total). Location 001 preserves
 the original roster; the other employees are synthetic sample data. User IDs
 are stored as text to preserve leading zeros. The SQL schema and roster data
-are in `database/schema.sql`.
+are in `database/schema.sql`. On startup, the backend applies this seed schema
+to its active database (`closure_call.db` by default), alongside the entries
+and alert snapshot tables.
 
 To create or rebuild the seeded database from the project root (replaces the
 existing database file):
@@ -51,6 +53,17 @@ existing database file):
 python -c "import sqlite3; from pathlib import Path; p = Path('database/fieldcast.db'); p.unlink(missing_ok=True); db = sqlite3.connect(p); db.executescript(Path('database/schema.sql').read_text(encoding='utf-8')); db.close()"
 ```
 
+## Deploy to Render
+
+The root `render.yaml` is a Render Blueprint for the Python web service. In
+Render, choose **New > Blueprint**, connect this repository, and deploy the
+`fieldcast` service. The Blueprint mounts a persistent disk at `/var/data` and
+stores the SQLite database at `/var/data/closure_call.db`; the roster is
+initialized automatically when the service starts. The service uses a Starter
+plan because Render persistent disks require a paid instance. SQLite on a
+persistent disk is intended for this single service instance, not horizontal
+scaling.
+
 ## Project structure
 
 - `frontend/` — HTML, CSS, and browser JavaScript
@@ -58,3 +71,4 @@ python -c "import sqlite3; from pathlib import Path; p = Path('database/fieldcas
 - `backend/mobile_api.py` — standalone read-only employee API for the mobile app
 - `database/schema.sql` — location and employee tables plus roster seed data
 - `database/fieldcast.db` — populated SQLite employee database
+- `render.yaml` — Render Blueprint for the web service and persistent disk
