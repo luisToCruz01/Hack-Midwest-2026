@@ -609,7 +609,7 @@ tbody tr:last-child td {
   font-weight: 600;
 }
 
-.employee-email {
+.employee-id {
   display: block;
   margin-top: 0.2rem;
   color: #819d99;
@@ -628,6 +628,18 @@ tbody tr:last-child td {
   color: #b8cbc6;
   font-size: 0.76rem;
   font-weight: 600;
+}
+
+.field-help {
+  margin: -0.25rem 0 0.75rem;
+  color: #819d99;
+  font-size: 0.73rem;
+  font-weight: 400;
+}
+
+.time-off-fields {
+  padding-top: 0.9rem;
+  border-top: 1px solid rgb(145 170 167 / 11%);
 }
 
 .day-options {
@@ -674,11 +686,23 @@ tbody tr:last-child td {
   content: "";
 }
 
-.status-active,
+.status-working,
 .status-open {
   border-color: rgb(80 215 160 / 20%);
   color: #85e5b9;
   background: rgb(80 215 160 / 8%);
+}
+
+.status-off-shift {
+  border-color: rgb(118 184 245 / 22%);
+  color: #a9d3fc;
+  background: rgb(118 184 245 / 8%);
+}
+
+.status-on-leave {
+  border-color: rgb(244 200 121 / 22%);
+  color: #f4d394;
+  background: rgb(244 200 121 / 8%);
 }
 
 .status-inactive,

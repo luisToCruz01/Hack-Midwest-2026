@@ -2,5 +2,7 @@ node_modules/
 database/*.sqlite
 database/*.sqlite-shm
 database/*.sqlite-wal
+.env
+.env*
+!.env.example
 ./.git/index.lock
-

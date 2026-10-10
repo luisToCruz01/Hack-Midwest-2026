@@ -1,8 +1,8 @@
 # Fieldcast Admin Dashboard
 
-A frontend prototype for managing employees, schedules, alerts, and work-site
-details. The Python server serves the static frontend and provides a small
-in-memory starter API. A SQLite database contains the employee roster.
+A dashboard prototype for employee schedules and work-site details, alongside
+a starter mobile API for employee login, alerts, and field reports. The
+employee roster and mobile reports are stored in SQLite.
 
 ## Requirements
 
@@ -19,9 +19,22 @@ python backend/server.py
 Open <http://127.0.0.1:3000>. Set the `PORT` environment variable to use a
 different port.
 
-The dashboard’s employees, schedules, alerts, and work-site edits are sample
-frontend state and reset when the page reloads. The starter `GET /api/entries`
-and `POST /api/entries` endpoints also keep data in memory only.
+To run the standalone read-only API for the mobile app, start a second server:
+
+```powershell
+python backend/mobile_api.py
+```
+
+It listens on <http://127.0.0.1:3001> by default. Set `MOBILE_API_HOST` or
+`MOBILE_API_PORT` to change its bind address or port.
+
+The Employees page reads the employee roster from SQLite through
+`GET /api/employees`. Employee details shown there come from the database;
+working/off-shift status is calculated from each employee's workdays and shift
+times. Dashboard alert and work-site edits are sample frontend state and reset
+when the page reloads. The mobile server exposes `GET /api/health` and
+`GET /api/employees`; the main server also provides login, weather-alert
+snapshots, and SQLite-backed field reports.
 
 ## Employee database
 
@@ -41,6 +54,7 @@ python -c "import sqlite3; from pathlib import Path; p = Path('database/fieldcas
 ## Project structure
 
 - `frontend/` — HTML, CSS, and browser JavaScript
-- `backend/server.py` — Python static-file server and in-memory JSON API
+- `backend/server.py` — dashboard server and mobile-app API
+- `backend/mobile_api.py` — standalone read-only employee API for the mobile app
 - `database/schema.sql` — location and employee tables plus roster seed data
 - `database/fieldcast.db` — populated SQLite employee database
