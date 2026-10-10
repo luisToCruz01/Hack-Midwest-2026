@@ -16,7 +16,11 @@ Two notification paths
   Facility path  NWS alerts at a facility -> graded recommendation (pending) -> a manager
                  approves or overrides -> everyone scheduled at that facility is notified.
                  Recommendations are created on demand AND by a background scan
-                 (AUTO_SCAN_MINUTES, default 10) that only ever creates PENDING items.
+                 (AUTO_SCAN_MINUTES, default 10). With AUTO_DECIDE on (the default) the scan
+                 sends notifications by itself when confidence is at least AUTO_DECIDE_MIN_CONFIDENCE;
+                 lower-confidence ones wait as PENDING for a manager.
+                 When the NWS stays quiet for ALL_CLEAR_HOLD_MINUTES after a notice, the same
+                 scan sends one all-clear to the people who were told (ALL_CLEAR on/off).
   Personal path  Mobile app posts a location every ~30 s -> NWS lookup for that spot ->
                  if severe, that one person is notified immediately -> if it is a
                  shelter-type emergency, FEMA open shelters are sent as a follow-up.
@@ -30,13 +34,15 @@ Who can do what
 Environment (all optional)
   DATABASE_URL (required), DB_POOL_MAX, HOST, PORT (Render sets PORT), SCHEMA_FILE,
   MANAGER_IDS, NWS_USER_AGENT, CELL_DEG, AUTO_SCAN_MINUTES (0 turns the scan off),
-  MIN_LOCATION_INTERVAL_SECONDS, NOTIFY_WEBHOOK_URL, NOTIFY_WEBHOOK_TOKEN
+  AUTO_DECIDE (on/off), AUTO_DECIDE_MIN_CONFIDENCE (low/medium/high),
+  ALL_CLEAR (on/off), ALL_CLEAR_HOLD_MINUTES, SNAPSHOT_RETENTION_DAYS,
+  API_MIN_INTERVAL_SECONDS, MIN_LOCATION_INTERVAL_SECONDS,
+  NOTIFY_WEBHOOK_URL, NOTIFY_WEBHOOK_TOKEN
 
 Routes
   GET  /api/health
   POST /api/login                          {"userId": "482917"}
   GET  /api/me
-  GET  /api/employees                      read-only SQLite roster
   GET  /api/locations/<id>                 PUT (manager): {"lat":..,"lon":..,"tz":"America/Chicago"}
   GET  /api/alerts?lat=..&lon=..
   GET  /api/shelters?lat=..&lon=..
@@ -61,7 +67,6 @@ import math
 import os
 import re
 import secrets
-import sqlite3
 import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -85,7 +90,6 @@ from psycopg_pool import ConnectionPool
 HERE = Path(__file__).resolve().parent
 PROJECT_DIRECTORY = HERE.parent
 FRONTEND_DIRECTORY = PROJECT_DIRECTORY / "frontend"
-DATABASE_PATH = PROJECT_DIRECTORY / "database" / "fieldcast.db"
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 DB_POOL_MAX = int(os.environ.get("DB_POOL_MAX", "10"))  # keep under your Postgres plan's connection limit
 # Looks in database/ first (your layout), then next to this file.
@@ -99,7 +103,8 @@ MAX_REQUEST_BYTES = 16_384
 IMPORT_MAX_BYTES = 5_000_000
 
 # Demo managers. Replace with a real role column or identity provider.
-MANAGER_IDS = set(os.environ.get("MANAGER_IDS", "482917,305764").split(","))
+# Whitespace around the commas is ignored ("482917, 305764" works).
+MANAGER_IDS = {i.strip() for i in os.environ.get("MANAGER_IDS", "482917,305764").split(",") if i.strip()}
 
 # NWS asks every client to identify itself. Change the email.
 NWS_ALERTS_URL = "https://api.weather.gov/alerts/active"
@@ -117,9 +122,23 @@ SHELTER_CACHE_SECONDS = 600
 SHELTER_BUFFER_MILES = 5      # shelters are fetched around the cell center, so pad the radius
 LOCATION_TTL_HOURS = 24       # employee locations older than this are deleted
 MIN_LOCATION_INTERVAL_SECONDS = int(os.environ.get("MIN_LOCATION_INTERVAL_SECONDS", "10"))
+# Minimum gap between calls to /api/alerts and /api/shelters per logged-in user.
+API_MIN_INTERVAL_SECONDS = int(os.environ.get("API_MIN_INTERVAL_SECONDS", "5"))
+# Raw NWS snapshots older than this are deleted, unless a recommendation points at them.
+SNAPSHOT_RETENTION_DAYS = int(os.environ.get("SNAPSHOT_RETENTION_DAYS", "30"))
 
 AUTO_SCAN_MINUTES = int(os.environ.get("AUTO_SCAN_MINUTES", "10"))
+# When on, the background scan sends facility notifications by itself, with no manager step.
+# Only recommendations at or above the confidence below are sent automatically (high = alert
+# Observed, medium = Likely, low = Possible). Anything lower waits for a manager.
+AUTO_DECIDE = os.environ.get("AUTO_DECIDE", "on").strip().lower() in ("on", "1", "true", "yes")
+AUTO_DECIDE_MIN_CONFIDENCE = os.environ.get("AUTO_DECIDE_MIN_CONFIDENCE", "medium").strip().lower()
+CONFIDENCE_RANK = {"low": 0, "medium": 1, "high": 2}
 AUTO_SCAN_REPEAT_HOURS = 6    # don't re-recommend the same posture for a facility sooner than this
+
+# All-clear: after a notice, the NWS must stay quiet this long before "normal operations may resume" goes out.
+ALL_CLEAR = os.environ.get("ALL_CLEAR", "on").strip().lower() in ("on", "1", "true", "yes")
+ALL_CLEAR_HOLD_MINUTES = int(os.environ.get("ALL_CLEAR_HOLD_MINUTES", "20"))
 
 # Where real push/SMS/email delivery happens. If unset, notifications are only recorded
 # with status 'simulated'. If set, each notification is POSTed there as JSON.
@@ -181,7 +200,7 @@ CREATE TABLE IF NOT EXISTS recommendations (
 CREATE TABLE IF NOT EXISTS notifications (
     id SERIAL PRIMARY KEY,
     created_at TEXT NOT NULL,
-    kind TEXT NOT NULL,              -- 'facility', 'personal' or 'shelter'
+    kind TEXT NOT NULL,              -- 'facility', 'personal', 'shelter' or 'all_clear'
     user_id TEXT NOT NULL REFERENCES employees(user_id),
     recommendation_id INTEGER REFERENCES recommendations(id),
     alert_id TEXT,
@@ -206,6 +225,8 @@ CREATE TABLE IF NOT EXISTS entries (
     description TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+ALTER TABLE recommendations ADD COLUMN IF NOT EXISTS cleared_at TEXT;
+ALTER TABLE recommendations ADD COLUMN IF NOT EXISTS clear_seen_at TEXT;
 """
 
 # Synthetic coordinates so every facility can be tested. Replace with real ones.
@@ -329,6 +350,11 @@ def init_db():
                 conn.execute("INSERT INTO employee_flags (user_id, telework_eligible) "
                              "SELECT user_id, 0 FROM employees WHERE user_id = ? "
                              "ON CONFLICT (user_id) DO NOTHING", (user_id,))
+
+        # Privacy: snapshots from people's own locations used to store coordinates. Only facility
+        # snapshots (whose coordinates match a facility) keep them. Safe to run on every start.
+        conn.execute("UPDATE snapshots SET lat = NULL, lon = NULL WHERE lat IS NOT NULL AND NOT EXISTS "
+                     "(SELECT 1 FROM location_geo g WHERE g.lat = snapshots.lat AND g.lon = snapshots.lon)")
 
 
 # ======================================================================
@@ -553,6 +579,7 @@ def summarize_alerts(raw):
 
 
 def save_snapshot(snapshot, lat, lon):
+    """Store one NWS fetch. Pass lat=None, lon=None for anything tied to a person's position."""
     with get_db() as conn:
         return conn.execute(
             "INSERT INTO snapshots (source, lat, lon, fetched_at, ok, error, raw_json) "
@@ -593,13 +620,33 @@ def get_cell_alerts(key, lat, lon):
         if value:
             return value
         snapshot = fetch_nws_alerts(lat, lon)
-        snapshot_id = save_snapshot(snapshot, lat, lon)
+        # Cell lookups come from people's phones, so the snapshot keeps no coordinates.
+        snapshot_id = save_snapshot(snapshot, None, None)
         value = {"ok": snapshot["ok"], "fetchedAt": snapshot["fetched_at"],
                  "snapshotId": snapshot_id, "alerts": summarize_alerts(snapshot["raw"])}
         if snapshot["ok"]:  # don't cache failures, so the next request retries
             with alert_cache_lock:
                 alert_cache[key] = {"at": monotonic(), "value": value}
         return value
+
+
+# ======================================================================
+# Per-user rate limit (for endpoints that trigger outside calls)
+# ======================================================================
+
+rate_marks = {}  # (user_id, bucket) -> monotonic time of last allowed call
+rate_lock = Lock()
+
+
+def too_fast(user_id, bucket, seconds):
+    """True if this user called this bucket less than `seconds` ago. Otherwise records the call."""
+    now = monotonic()
+    with rate_lock:
+        last = rate_marks.get((user_id, bucket))
+        if last is not None and now - last < seconds:
+            return True
+        rate_marks[(user_id, bucket)] = now
+        return False
 
 
 # ======================================================================
@@ -660,6 +707,37 @@ def fetch_shelters(lat, lon, radius_miles=50, limit=3):
             shelters.append({**s, "miles": miles})
     shelters.sort(key=lambda s: s["miles"])
     return {"ok": True, "shelters": shelters[:limit], "fetchedAt": hit["fetchedAt"]}
+
+
+# ======================================================================
+# Housekeeping (keeps tables and in-memory caches from growing forever)
+# ======================================================================
+
+def prune_caches():
+    """Drop expired cache entries, idle per-cell locks and old rate-limit marks."""
+    now = monotonic()
+    with alert_cache_lock:
+        for k in [k for k, v in alert_cache.items() if now - v["at"] > ALERT_CACHE_SECONDS]:
+            del alert_cache[k]
+        for k in [k for k, lock in cell_fetch_locks.items() if k not in alert_cache and not lock.locked()]:
+            del cell_fetch_locks[k]
+    with shelter_cache_lock:
+        for k in [k for k, v in shelter_cache.items() if now - v["at"] > SHELTER_CACHE_SECONDS]:
+            del shelter_cache[k]
+    with rate_lock:
+        for k in [k for k, t in rate_marks.items() if now - t > 3600]:
+            del rate_marks[k]
+
+
+def purge_old_snapshots():
+    """Delete raw NWS snapshots past SNAPSHOT_RETENTION_DAYS, except ones a recommendation cites."""
+    if SNAPSHOT_RETENTION_DAYS <= 0:
+        return 0
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=SNAPSHOT_RETENTION_DAYS)).isoformat()
+    with get_db() as conn:
+        return conn.execute(
+            "DELETE FROM snapshots WHERE fetched_at < ? AND id NOT IN "
+            "(SELECT snapshot_id FROM recommendations WHERE snapshot_id IS NOT NULL)", (cutoff,)).rowcount
 
 
 # ======================================================================
@@ -1073,11 +1151,48 @@ def load_location(location_id):
         ).fetchone()
 
 
-def create_recommendation(loc, requested_by, only_if_actionable=False):
+def finalize_decision(rec, action, final, reason, decided_by):
+    """Record a decision and queue + send the notifications. Used by managers and by auto-send.
+
+    Returns the notification package, or None if someone else already decided this one.
+    """
+    loc = load_location(rec["location_id"])
+    headline = json.loads(rec["detail_json"])["recommendation"].get("headline")
+    package = build_package(loc, final, local_now(loc["tz"]), headline)
+
+    queued = []  # (notification id, user id, channel, message)
+    with get_db() as conn:
+        updated = conn.execute(
+            "UPDATE recommendations SET status = ?, final_posture = ?, decided_by = ?, decided_at = ?, "
+            "decision_reason = ? WHERE id = ? AND status = 'pending'",
+            ("approved" if action == "approve" else "overridden", final, decided_by,
+             now_iso(), reason or None, rec["id"]),
+        )
+        if updated.rowcount == 0:
+            return None
+        for r in package["recipients"]:
+            channel, message = ",".join(r["channels"]), package["messages"][r["group"]]
+            notif_id = queue_notification(conn, "facility", r["userId"], channel, message,
+                                          recommendation_id=rec["id"])
+            queued.append((notif_id, r["userId"], channel, message))
+    append_log("decision", {
+        "recommendationId": rec["id"], "action": action, "recommendedPosture": rec["posture"],
+        "finalPosture": final, "reason": reason or None, "decidedBy": decided_by,
+        "notificationsQueued": package["counts"]["included"],
+    })
+    for notif_id, user_id, channel, message in queued:  # after the commit, never inside it
+        if notif_id and channel != "none_on_file":
+            deliver(notif_id, "facility", user_id, channel, message)
+    return package
+
+
+def create_recommendation(loc, requested_by, only_if_actionable=False, auto_decide=False):
     """Fetch fresh NWS data for a facility and store a PENDING recommendation.
 
     With only_if_actionable (used by the background scan), nothing is stored when the
     answer is 'normal' or the NWS could not be reached, and repeats are suppressed.
+    With auto_decide, a recommendation that is not 'normal' and meets AUTO_DECIDE_MIN_CONFIDENCE is
+    approved on the spot (decided_by 'auto') and its notifications go out immediately.
     Returns (rec_id, rec, package) or None if nothing was created.
     """
     snapshot = fetch_nws_alerts(loc["lat"], loc["lon"])  # always fresh for a decision
@@ -1091,9 +1206,10 @@ def create_recommendation(loc, requested_by, only_if_actionable=False):
             return None
         repeat_cutoff = (datetime.now(timezone.utc) - timedelta(hours=AUTO_SCAN_REPEAT_HOURS)).isoformat()
         with get_db() as conn:
+            # A notice that was already cleared doesn't suppress a brand-new alert of the same kind.
             dup = conn.execute(
                 "SELECT 1 FROM recommendations WHERE location_id = ? AND posture = ? AND "
-                "(status = 'pending' OR created_at > ?)",
+                "(status = 'pending' OR (created_at > ? AND cleared_at IS NULL))",
                 (loc["location_id"], rec["posture"], repeat_cutoff)).fetchone()
         if dup:
             return None
@@ -1117,28 +1233,135 @@ def create_recommendation(loc, requested_by, only_if_actionable=False):
         "recipientIds": [r["userId"] for r in package["recipients"]],
         "excludedCount": package["counts"]["excluded"],
     })
+    if (auto_decide and rec["posture"] != "normal"
+            and CONFIDENCE_RANK.get(rec["confidence"], 0) >= CONFIDENCE_RANK.get(AUTO_DECIDE_MIN_CONFIDENCE, 1)):
+        with get_db() as conn:
+            row = conn.execute("SELECT * FROM recommendations WHERE id = ?", (rec_id,)).fetchone()
+        sent = finalize_decision(row, "approve", rec["posture"], "", "auto")
+        if sent is not None:
+            package = sent
     return rec_id, rec, package
 
 
+# ======================================================================
+# All-clear
+# ======================================================================
+
+def check_all_clear(loc):
+    """If a facility has an open notice and the NWS has stayed quiet for ALL_CLEAR_HOLD_MINUTES,
+    send one all-clear to the people who were told. Returns True if one was sent."""
+    with get_db() as conn:
+        open_recs = conn.execute(
+            "SELECT id, final_posture FROM recommendations WHERE location_id = ? "
+            "AND status IN ('approved', 'overridden') AND final_posture <> 'normal' "
+            "AND cleared_at IS NULL ORDER BY id", (loc["location_id"],)).fetchall()
+    if not open_recs:
+        return False
+
+    snapshot = fetch_nws_alerts(loc["lat"], loc["lon"])
+    if not snapshot["ok"]:
+        return False  # never clear on a failed fetch
+    meta = {"ok": True, "fetched_at": snapshot["fetched_at"], "error": None, "snapshot_id": None}
+    current = evaluate(loc["name"], meta, summarize_alerts(snapshot["raw"]))
+
+    ids = [r["id"] for r in open_recs]
+    now = datetime.now(timezone.utc)
+    with get_db() as conn:
+        if current["posture"] != "normal":  # still active, or re-escalated: restart the hold timer
+            conn.execute("UPDATE recommendations SET clear_seen_at = NULL WHERE id = ANY(?)", (ids,))
+            return False
+        conn.execute("UPDATE recommendations SET clear_seen_at = COALESCE(clear_seen_at, ?) "
+                     "WHERE id = ANY(?)", (now.isoformat(), ids))
+        first_quiet = conn.execute("SELECT MAX(clear_seen_at) FROM recommendations WHERE id = ANY(?)",
+                                   (ids,)).fetchone()[0]
+    if now - datetime.fromisoformat(first_quiet) < timedelta(minutes=ALL_CLEAR_HOLD_MINUTES):
+        return False
+
+    posture = max((r["final_posture"] for r in open_recs), key=lambda p: POSTURE_RANK.get(p, 0))
+    message = (f"{loc['name']}: the {POSTURE_LABEL[posture]} notice has ended. The NWS shows no active "
+               "alerts that meet our thresholds, so normal operations may resume. "
+               "Check with your supervisor if you are unsure when to report.")
+    now_local = local_now(loc["tz"])
+    queued = []
+    with get_db() as conn:
+        claimed = conn.execute("UPDATE recommendations SET cleared_at = ? "
+                               "WHERE id = ANY(?) AND cleared_at IS NULL", (now_iso(), ids))
+        if claimed.rowcount == 0:
+            return False  # another instance got there first
+        people = conn.execute(
+            "SELECT DISTINCT ON (n.user_id) n.user_id, n.channel, e.shift_start, e.shift_end, e.days_of_week "
+            "FROM notifications n JOIN employees e ON e.user_id = n.user_id "
+            "WHERE n.kind = 'facility' AND n.recommendation_id = ANY(?) AND n.channel <> 'none_on_file' "
+            "ORDER BY n.user_id, n.id DESC", (ids,)).fetchall()
+        for p in people:
+            if employee_status(p, now_local) not in ("on_shift", "upcoming"):
+                continue  # shift over or not working today: an all-clear would just be noise
+            notif_id = queue_notification(conn, "all_clear", p["user_id"], p["channel"], message,
+                                          recommendation_id=ids[-1])
+            queued.append((notif_id, p["user_id"], p["channel"], message))
+    append_log("all_clear", {"locationId": loc["location_id"], "recommendationIds": ids,
+                             "clearedPosture": posture, "notificationsQueued": len(queued),
+                             "holdMinutes": ALL_CLEAR_HOLD_MINUTES})
+    for notif_id, user_id, channel, msg in queued:  # after the commit, never inside it
+        if notif_id:
+            deliver(notif_id, "all_clear", user_id, channel, msg)
+    return True
+
+
+# ======================================================================
+# Background scan
+# ======================================================================
+
+SCAN_LOCK_KEY = 7002
+
+
 def scan_facilities():
-    """Check every facility once. Creates pending recommendations only; a manager still decides."""
+    """Check every facility once. With AUTO_DECIDE on, notifications go out without a manager step."""
     with get_db() as conn:
         ids = [r[0] for r in conn.execute("SELECT location_id FROM location_geo ORDER BY location_id")]
     created = 0
     for location_id in ids:
         loc = load_location(location_id)
-        if loc and create_recommendation(loc, "auto-scan", only_if_actionable=True):
+        if loc and create_recommendation(loc, "auto-scan", only_if_actionable=True, auto_decide=AUTO_DECIDE):
             created += 1
+        if loc and ALL_CLEAR:
+            try:
+                check_all_clear(loc)
+            except Exception as err:  # one bad facility must not stop the scan
+                print(f"All-clear error at location {location_id}: {err}")
         time.sleep(0.5)  # be polite to the NWS
     return created
+
+
+def scan_once():
+    """Run one scan, but only if no other instance is already running one.
+
+    A Postgres session-level advisory lock is held on a dedicated connection for the whole scan,
+    so two copies of the server never scan (or send duplicate notices) at the same time.
+    Returns the number of new recommendations, or None if another instance has the lock.
+    """
+    with get_pool().connection() as conn:
+        conn.autocommit = True  # no open transaction while the scan runs
+        if not conn.execute("SELECT pg_try_advisory_lock(%s)", (SCAN_LOCK_KEY,)).fetchone()[0]:
+            return None
+        try:
+            created = scan_facilities()
+            purged = purge_old_snapshots()
+            prune_caches()
+            if purged:
+                print(f"Cleanup: removed {purged} old snapshot(s).")
+            return created
+        finally:
+            conn.execute("SELECT pg_advisory_unlock(%s)", (SCAN_LOCK_KEY,))
+            conn.autocommit = False  # the pool hands this connection to other code next
 
 
 def scan_loop():
     while True:
         try:
-            created = scan_facilities()
+            created = scan_once()
             if created:
-                print(f"Auto-scan: {created} new pending recommendation(s).")
+                print(f"Auto-scan: {created} new recommendation(s).")
         except Exception as err:  # never let the scan thread die
             print(f"Auto-scan error: {err}")
         time.sleep(AUTO_SCAN_MINUTES * 60)
@@ -1152,7 +1375,6 @@ ROUTES = [(m, re.compile(p), name, access) for m, p, name, access in [
     ("GET", r"/api/health", "h_health", "public"),
     ("POST", r"/api/login", "h_login", "public"),
     ("GET", r"/api/me", "h_me", "auth"),
-    ("GET", r"/api/employees", "h_employees", "public"),
     ("GET", r"/api/locations/(\d+)", "h_location_get", "auth"),
     ("PUT", r"/api/locations/(\d+)", "h_location_put", "manager"),
     ("GET", r"/api/alerts", "h_alerts", "auth"),
@@ -1221,7 +1443,8 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
     # ----- basic -----
     def h_health(self, employee, query):
         self.send_json({"status": "ok", "storage": "postgres", "time": now_iso(),
-                        "autoScanMinutes": AUTO_SCAN_MINUTES,
+                        "autoScanMinutes": AUTO_SCAN_MINUTES, "autoDecide": AUTO_DECIDE,
+                        "allClear": ALL_CLEAR,
                         "delivery": "webhook" if NOTIFY_WEBHOOK_URL else "simulated"})
 
     def h_login(self, employee, query):
@@ -1254,41 +1477,6 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
                         "shiftEnd": row["shift_end"], "daysOfWeek": row["days_of_week"],
                         "locationSharing": bool(row["consent"]),
                         "isManager": row["user_id"] in MANAGER_IDS})
-
-    def h_employees(self, employee, query):
-        try:
-            database_uri = f"{DATABASE_PATH.as_uri()}?mode=ro"
-            with sqlite3.connect(database_uri, uri=True) as database:
-                employees = database.execute(
-                    """
-                    SELECT e.user_id, e.full_name, e.shift_start, e.shift_end,
-                           e.days_of_week, l.location_id, l.name, l.address
-                    FROM employees AS e
-                    JOIN locations AS l ON l.location_id = e.location_id
-                    ORDER BY full_name COLLATE NOCASE
-                    """
-                ).fetchall()
-        except sqlite3.Error as error:
-            self.log_error("Unable to read employee database: %s", error)
-            self.send_json({"error": "Unable to load employees from the database."}, status=500)
-            return
-
-        self.send_json([
-            {
-                "userId": user_id,
-                "fullName": full_name,
-                "shiftStart": shift_start,
-                "shiftEnd": shift_end,
-                "daysOfWeek": days_of_week,
-                "locationId": location_id,
-                "locationName": location_name,
-                "locationAddress": location_address,
-            }
-            for (
-                user_id, full_name, shift_start, shift_end, days_of_week,
-                location_id, location_name, location_address,
-            ) in employees
-        ])
 
     # ----- facilities -----
     def h_location_get(self, employee, query, location_id):
@@ -1367,20 +1555,29 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
             return None
         return lat, lon
 
+    def rate_limited(self, employee, bucket):
+        """Sends a 429 and returns True if this user is calling too often."""
+        if too_fast(employee["user_id"], bucket, API_MIN_INTERVAL_SECONDS):
+            self.send_json({"error": f"Please wait {API_MIN_INTERVAL_SECONDS} seconds between requests."},
+                           status=429)
+            return True
+        return False
+
     def h_alerts(self, employee, query):
         coords = self.parse_coords(query)
-        if coords is None:
+        if coords is None or self.rate_limited(employee, "alerts"):
             return
         snapshot = fetch_nws_alerts(*coords)
-        snapshot_id = save_snapshot(snapshot, *coords)
+        snapshot_id = save_snapshot(snapshot, None, None)  # the point belongs to the caller: don't store it
         self.send_json({"snapshotId": snapshot_id, "source": snapshot["source"],
                         "fetchedAt": snapshot["fetched_at"], "ok": snapshot["ok"],
                         "error": snapshot["error"], "alerts": summarize_alerts(snapshot["raw"])})
 
     def h_shelters(self, employee, query):
         coords = self.parse_coords(query)
-        if coords is not None:
-            self.send_json(fetch_shelters(*coords))
+        if coords is None or self.rate_limited(employee, "shelters"):
+            return
+        self.send_json(fetch_shelters(*coords))
 
     def h_my_shelters(self, employee, query):
         with get_db() as conn:
@@ -1407,7 +1604,8 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
             self.send_json({"error": "Snapshot not found."}, status=404)
             return
         data = dict(row)
-        data["raw"] = json.loads(data.pop("raw_json")) if data["raw_json"] else None
+        raw_json = data.pop("raw_json")
+        data["raw"] = json.loads(raw_json) if raw_json else None
         self.send_json(data)
 
     # ----- recommendations and decisions -----
@@ -1472,34 +1670,10 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
                 self.send_json({"error": "An override requires a reason."}, status=400)
                 return
 
-        loc = load_location(rec["location_id"])
-        headline = json.loads(rec["detail_json"])["recommendation"].get("headline")
-        package = build_package(loc, final, local_now(loc["tz"]), headline)
-
-        queued = []  # (notification id, user id, channel, message)
-        with get_db() as conn:
-            updated = conn.execute(
-                "UPDATE recommendations SET status = ?, final_posture = ?, decided_by = ?, decided_at = ?, "
-                "decision_reason = ? WHERE id = ? AND status = 'pending'",
-                ("approved" if action == "approve" else "overridden", final, employee["user_id"],
-                 now_iso(), reason or None, int(rec_id)),
-            )
-            if updated.rowcount == 0:
-                self.send_json({"error": "This recommendation already has a decision."}, status=409)
-                return
-            for r in package["recipients"]:
-                channel, message = ",".join(r["channels"]), package["messages"][r["group"]]
-                notif_id = queue_notification(conn, "facility", r["userId"], channel, message,
-                                              recommendation_id=int(rec_id))
-                queued.append((notif_id, r["userId"], channel, message))
-        append_log("decision", {
-            "recommendationId": int(rec_id), "action": action, "recommendedPosture": rec["posture"],
-            "finalPosture": final, "reason": reason or None, "decidedBy": employee["user_id"],
-            "notificationsQueued": package["counts"]["included"],
-        })
-        for notif_id, user_id, channel, message in queued:  # after the commit, never inside it
-            if notif_id and channel != "none_on_file":
-                deliver(notif_id, "facility", user_id, channel, message)
+        package = finalize_decision(rec, action, final, reason, employee["user_id"])
+        if package is None:
+            self.send_json({"error": "This recommendation already has a decision."}, status=409)
+            return
         self.send_json({"id": int(rec_id), "status": "approved" if action == "approve" else "overridden",
                         "finalPosture": final, "package": package})
 
@@ -1641,6 +1815,8 @@ def main():
     print(f"Closure Call server running at http://{HOST}:{PORT}")
     print("Database: PostgreSQL (DATABASE_URL)")
     print(f"Facility auto-scan: {'every %d min' % AUTO_SCAN_MINUTES if AUTO_SCAN_MINUTES else 'off'}")
+    print(f"Auto-send without manager approval: {'ON (min confidence ' + AUTO_DECIDE_MIN_CONFIDENCE + ')' if AUTO_DECIDE else 'off'}")
+    print(f"All-clear messages: {'ON (hold ' + str(ALL_CLEAR_HOLD_MINUTES) + ' min)' if ALL_CLEAR else 'off'}")
     print(f"Notification delivery: {'webhook' if NOTIFY_WEBHOOK_URL else 'simulated (no NOTIFY_WEBHOOK_URL)'}")
     try:
         server.serve_forever()
