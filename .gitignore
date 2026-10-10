@@ -5,3 +5,4 @@ database/*.sqlite-wal
 .env
 .env*
 !.env.example
+./.git/index.lock
