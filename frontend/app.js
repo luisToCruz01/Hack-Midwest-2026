@@ -73,6 +73,7 @@ function mapDatabaseEmployee(employee) {
   return {
     id: employee.userId,
     name: employee.fullName,
+    phoneNumber: employee.phoneNumber,
     schedule: {
       days: expandDaysOfWeek(employee.daysOfWeek),
       startTime: employee.shiftStart,
@@ -218,7 +219,7 @@ function renderEmployees() {
   const selectedStatus = employeeFilter.value;
   const filteredEmployees = employees.filter((employee) => {
     const employeeStatus = getEmployeeStatus(employee);
-    const matchesSearch = [employee.name, employee.id, employeeStatus]
+    const matchesSearch = [employee.name, employee.id, employee.phoneNumber, employeeStatus]
       .some((value) => value.toLowerCase().includes(search));
     const matchesStatus = selectedStatus === "all" || employeeStatus === selectedStatus;
     return matchesSearch && matchesStatus;
@@ -239,6 +240,7 @@ function renderEmployees() {
     const personCopy = document.createElement("div");
     const name = document.createElement("span");
     const userId = document.createElement("span");
+    const phoneNumber = document.createElement("span");
     const schedule = document.createElement("td");
     const status = document.createElement("td");
     const statusPill = document.createElement("span");
@@ -252,7 +254,9 @@ function renderEmployees() {
     name.textContent = employee.name;
     userId.className = "employee-id";
     userId.textContent = `ID ${employee.id}`;
-    personCopy.append(name, userId);
+    phoneNumber.className = "employee-id";
+    phoneNumber.textContent = employee.phoneNumber;
+    personCopy.append(name, userId, phoneNumber);
     person.append(avatar, personCopy);
     personCell.append(person);
     schedule.textContent = describeSchedule(employee.schedule);
