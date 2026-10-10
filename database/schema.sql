@@ -217,6 +217,7 @@ CREATE TABLE IF NOT EXISTS employees (
     CHECK (length(user_id) = 6 AND user_id NOT GLOB '*[^0-9]*'),
   location_id INTEGER NOT NULL REFERENCES locations(location_id),
   full_name TEXT NOT NULL,
+  phone_number TEXT NOT NULL CHECK (length(phone_number) > 0),
   shift_start TEXT NOT NULL CHECK (time(shift_start) IS NOT NULL),
   shift_end TEXT NOT NULL CHECK (time(shift_end) IS NOT NULL),
   days_of_week TEXT NOT NULL CHECK (
@@ -232,41 +233,44 @@ CREATE TABLE IF NOT EXISTS employees (
   CHECK (time(shift_end) > time(shift_start))
 );
 
-INSERT INTO employees (user_id, location_id, full_name, shift_start, shift_end, days_of_week)
+INSERT INTO employees (
+  user_id, location_id, full_name, phone_number, shift_start, shift_end, days_of_week
+)
 VALUES
-  ('482917', 1, 'Naomi Brooks', '06:00', '14:30', 'Mon-Fri'),
-  ('305764', 1, 'Dmitri Volkov', '06:30', '15:00', 'Mon-Fri'),
-  ('718203', 1, 'Ayesha Khan', '07:00', '15:30', 'Mon-Thu'),
-  ('926541', 1, 'Walter Jennings', '07:00', '15:30', 'Mon-Fri'),
-  ('134098', 1, 'Camila Torres', '07:00', '15:30', 'Mon-Fri'),
-  ('657320', 1, 'Isaiah Brown', '07:30', '16:00', 'Tue-Sat'),
-  ('291846', 1, 'Mei-Ling Chen', '07:30', '16:00', 'Mon-Fri'),
-  ('840573', 1, 'Patrick O’Connell', '07:30', '16:00', 'Mon-Thu'),
-  ('513689', 1, 'Fatima Hassan', '08:00', '16:30', 'Mon-Fri'),
-  ('762405', 1, 'Gabriel Santos', '08:00', '16:30', 'Wed-Sun'),
-  ('378152', 1, 'Rebecca Lindqvist', '08:00', '16:30', 'Mon-Fri'),
-  ('094637', 1, 'Terrence Hall', '08:00', '16:30', 'Mon-Fri'),
-  ('625981', 1, 'Anika Sharma', '08:00', '16:30', 'Tue-Fri'),
-  ('417306', 1, 'Luis Herrera', '08:00', '16:30', 'Mon-Thu'),
-  ('859264', 1, 'Chloe Dubois', '08:30', '17:00', 'Mon-Fri'),
-  ('230715', 1, 'Omar Farouk', '08:30', '17:00', 'Tue-Sat'),
-  ('986423', 1, 'Josephine Wright', '08:30', '17:00', 'Mon-Fri'),
-  ('541078', 1, 'Kenji Tanaka', '08:30', '17:00', 'Mon-Fri'),
-  ('173859', 1, 'Savannah Reed', '08:30', '17:00', 'Mon-Thu'),
-  ('704392', 1, 'Andre Baptiste', '09:00', '17:30', 'Mon-Fri'),
-  ('368217', 1, 'Ingrid Larsen', '09:00', '17:30', 'Sun-Thu'),
-  ('892645', 1, 'Hector Ramirez', '09:00', '17:30', 'Mon-Fri'),
-  ('456031', 1, 'Tamara Goldberg', '09:00', '17:30', 'Mon-Fri'),
-  ('217984', 1, 'Nathan Whitehorse', '09:00', '17:30', 'Tue-Sat'),
-  ('639570', 1, 'Yasmin Aziz', '09:30', '18:00', 'Mon-Fri'),
-  ('081426', 1, 'Caleb Morrison', '09:30', '18:00', 'Mon-Thu'),
-  ('774163', 1, 'Bao Tran', '10:00', '18:30', 'Mon-Fri'),
-  ('325908', 1, 'Delia Kowalski', '10:00', '18:30', 'Wed-Sun'),
-  ('910352', 1, 'Jamal Peterson', '14:00', '22:30', 'Sun-Thu'),
-  ('563741', 1, 'Olivia Fontaine', '14:00', '22:30', 'Tue-Sat')
+  ('482917', 1, 'Andrew Youssef', '236 518 6769', '06:00', '14:30', 'Mon-Fri'),
+  ('305764', 1, 'Dmitri Volkov', '202-555-0100 ext. 0002', '06:30', '15:00', 'Mon-Fri'),
+  ('718203', 1, 'Ayesha Khan', '202-555-0100 ext. 0003', '07:00', '15:30', 'Mon-Thu'),
+  ('926541', 1, 'Walter Jennings', '202-555-0100 ext. 0004', '07:00', '15:30', 'Mon-Fri'),
+  ('134098', 1, 'Camila Torres', '202-555-0100 ext. 0005', '07:00', '15:30', 'Mon-Fri'),
+  ('657320', 1, 'Isaiah Brown', '202-555-0100 ext. 0006', '07:30', '16:00', 'Tue-Sat'),
+  ('291846', 1, 'Mei-Ling Chen', '202-555-0100 ext. 0007', '07:30', '16:00', 'Mon-Fri'),
+  ('840573', 1, 'Patrick O’Connell', '202-555-0100 ext. 0008', '07:30', '16:00', 'Mon-Thu'),
+  ('513689', 1, 'Fatima Hassan', '202-555-0100 ext. 0009', '08:00', '16:30', 'Mon-Fri'),
+  ('762405', 1, 'Gabriel Santos', '202-555-0100 ext. 0010', '08:00', '16:30', 'Wed-Sun'),
+  ('378152', 1, 'Rebecca Lindqvist', '202-555-0100 ext. 0011', '08:00', '16:30', 'Mon-Fri'),
+  ('094637', 1, 'Terrence Hall', '202-555-0100 ext. 0012', '08:00', '16:30', 'Mon-Fri'),
+  ('625981', 1, 'Anika Sharma', '202-555-0100 ext. 0013', '08:00', '16:30', 'Tue-Fri'),
+  ('417306', 1, 'Luis Herrera', '202-555-0100 ext. 0014', '08:00', '16:30', 'Mon-Thu'),
+  ('859264', 1, 'Chloe Dubois', '202-555-0100 ext. 0015', '08:30', '17:00', 'Mon-Fri'),
+  ('230715', 1, 'Omar Farouk', '202-555-0100 ext. 0016', '08:30', '17:00', 'Tue-Sat'),
+  ('986423', 1, 'Josephine Wright', '202-555-0100 ext. 0017', '08:30', '17:00', 'Mon-Fri'),
+  ('541078', 1, 'Kenji Tanaka', '202-555-0100 ext. 0018', '08:30', '17:00', 'Mon-Fri'),
+  ('173859', 1, 'Savannah Reed', '202-555-0100 ext. 0019', '08:30', '17:00', 'Mon-Thu'),
+  ('704392', 1, 'Andre Baptiste', '202-555-0100 ext. 0020', '09:00', '17:30', 'Mon-Fri'),
+  ('368217', 1, 'Ingrid Larsen', '202-555-0100 ext. 0021', '09:00', '17:30', 'Sun-Thu'),
+  ('892645', 1, 'Hector Ramirez', '202-555-0100 ext. 0022', '09:00', '17:30', 'Mon-Fri'),
+  ('456031', 1, 'Tamara Goldberg', '202-555-0100 ext. 0023', '09:00', '17:30', 'Mon-Fri'),
+  ('217984', 1, 'Nathan Whitehorse', '202-555-0100 ext. 0024', '09:00', '17:30', 'Tue-Sat'),
+  ('639570', 1, 'Yasmin Aziz', '202-555-0100 ext. 0025', '09:30', '18:00', 'Mon-Fri'),
+  ('081426', 1, 'Caleb Morrison', '202-555-0100 ext. 0026', '09:30', '18:00', 'Mon-Thu'),
+  ('774163', 1, 'Bao Tran', '202-555-0100 ext. 0027', '10:00', '18:30', 'Mon-Fri'),
+  ('325908', 1, 'Delia Kowalski', '202-555-0100 ext. 0028', '10:00', '18:30', 'Wed-Sun'),
+  ('910352', 1, 'Jamal Peterson', '202-555-0100 ext. 0029', '14:00', '22:30', 'Sun-Thu'),
+  ('563741', 1, 'Olivia Fontaine', '202-555-0100 ext. 0030', '14:00', '22:30', 'Tue-Sat')
 ON CONFLICT(user_id) DO UPDATE SET
   location_id = excluded.location_id,
   full_name = excluded.full_name,
+  phone_number = excluded.phone_number,
   shift_start = excluded.shift_start,
   shift_end = excluded.shift_end,
   days_of_week = excluded.days_of_week;
@@ -330,7 +334,7 @@ last_names(name) AS (
 ),
 existing_names(name) AS (
   VALUES
-    ('Naomi Brooks'), ('Dmitri Volkov'), ('Ayesha Khan'),
+    ('Andrew Youssef'), ('Dmitri Volkov'), ('Ayesha Khan'),
     ('Walter Jennings'), ('Camila Torres'), ('Isaiah Brown'),
     ('Mei-Ling Chen'), ('Patrick O’Connell'), ('Fatima Hassan'),
     ('Gabriel Santos'), ('Rebecca Lindqvist'), ('Terrence Hall'),
@@ -370,12 +374,18 @@ workdays(day_number, days) AS (
     (3, 'Wed-Sun'), (4, 'Tue-Fri'), (5, 'Sun-Thu')
 )
 INSERT INTO employees (
-  user_id, location_id, full_name, shift_start, shift_end, days_of_week
+  user_id, location_id, full_name, phone_number,
+  shift_start, shift_end, days_of_week
 )
 SELECT
   printf('%06d', 99999 + person_number),
   2 + ((person_number - 1) / 30),
   full_name,
+  printf(
+    '202-555-%04d ext. %04d',
+    100 + ((person_number - 1) % 100),
+    30 + person_number
+  ),
   strftime('%H:%M', shifts.start_time),
   strftime('%H:%M', shifts.start_time, '+8 hours', '+30 minutes'),
   workdays.days
@@ -386,6 +396,7 @@ WHERE person_number <= 5970
 ON CONFLICT(user_id) DO UPDATE SET
   location_id = excluded.location_id,
   full_name = excluded.full_name,
+  phone_number = excluded.phone_number,
   shift_start = excluded.shift_start,
   shift_end = excluded.shift_end,
   days_of_week = excluded.days_of_week;
