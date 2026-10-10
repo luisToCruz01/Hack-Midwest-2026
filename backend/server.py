@@ -113,10 +113,31 @@ PROJECT_DIRECTORY = HERE.parent
 FRONTEND_DIRECTORY = PROJECT_DIRECTORY / "frontend"
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 DB_POOL_MAX = int(os.environ.get("DB_POOL_MAX", "10"))  # keep under your Postgres plan's connection limit
-# Looks in database/ first (your layout), then next to this file.
-SCHEMA_FILE = Path(os.environ.get("SCHEMA_FILE") or next(
-    (p for p in (PROJECT_DIRECTORY / "database" / "schema_postgres.sql", HERE / "schema_postgres.sql") if p.exists()),
-    PROJECT_DIRECTORY / "database" / "schema_postgres.sql"))
+
+
+def _is_placeholder_path(value):
+    if value is None:
+        return False
+    value = value.strip()
+    if not value:
+        return True
+    lowered = value.lower().replace("\\", "/")
+    return "full/path/to" in lowered or "full\\path\\to" in lowered or lowered.endswith("/schema_postgres.sql") and "full/path/to" in lowered
+
+
+# Prefer the configured file when it points to a real schema, but ignore the placeholder
+# values that show up in sample .env files and fall back to the project layout.
+raw_schema_file = os.environ.get("SCHEMA_FILE")
+if raw_schema_file and not _is_placeholder_path(raw_schema_file):
+    schema_candidate = Path(raw_schema_file).expanduser()
+    if schema_candidate.exists():
+        SCHEMA_FILE = schema_candidate
+    else:
+        SCHEMA_FILE = next((p for p in (PROJECT_DIRECTORY / "database" / "schema_postgres.sql", HERE / "schema_postgres.sql") if p.exists()),
+                           PROJECT_DIRECTORY / "database" / "schema_postgres.sql")
+else:
+    SCHEMA_FILE = next((p for p in (PROJECT_DIRECTORY / "database" / "schema_postgres.sql", HERE / "schema_postgres.sql") if p.exists()),
+                       PROJECT_DIRECTORY / "database" / "schema_postgres.sql")
 # Render needs 0.0.0.0 to reach the app. Locally 127.0.0.1 is safer.
 HOST = os.environ.get("HOST", "0.0.0.0" if os.environ.get("RENDER") else "127.0.0.1")
 PORT = int(os.environ.get("PORT", "3000"))
