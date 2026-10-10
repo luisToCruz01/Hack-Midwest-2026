@@ -8,15 +8,17 @@ Setup
      starts against an empty database (it creates all tables and the 6,000 employees).
   3. Set DATABASE_URL to your Postgres connection string (on Render: the Internal URL
      in the service's Environment settings; on your computer: the External URL).
-  4. python server.py
-  5. Your names load from schema_postgres.sql. Attach email/phone with load_contacts.py (CSV) or
+  4. Set MANAGER_IDS to the user IDs allowed to use manager features (comma separated).
+  5. python server.py
+  6. Load real facility coordinates with load_geo.py (facilities without coordinates are skipped
+     by the background scan). Attach email/phone with load_contacts.py (CSV) or
      POST /api/admin/employees/contacts. Add new people with /api/admin/employees/import.
 
 Two notification paths
   Facility path  NWS alerts at a facility -> graded recommendation (pending) -> a manager
                  approves or overrides -> everyone scheduled at that facility is notified.
                  Recommendations are created on demand AND by a background scan
-                 (AUTO_SCAN_MINUTES, default 10). With AUTO_DECIDE on (the default) the scan
+                 (AUTO_SCAN_MINUTES, default 10). With AUTO_DECIDE on (default OFF) the scan
                  sends notifications by itself when confidence is at least AUTO_DECIDE_MIN_CONFIDENCE;
                  lower-confidence ones wait as PENDING for a manager.
                  When the NWS stays quiet for ALL_CLEAR_HOLD_MINUTES after a notice, the same
@@ -28,23 +30,24 @@ Two notification paths
 
 Who can do what
   Any logged-in employee: own profile, location sharing, own notifications and shelters.
-  Managers (MANAGER_IDS env var, comma separated): recommendations, decisions,
+  Managers (MANAGER_IDS env var, comma separated): employee roster, recommendations, decisions,
   decision log, facility settings, snapshots, employee import.
 
-Environment (all optional)
+Environment (all optional except DATABASE_URL and, for manager features, MANAGER_IDS)
   DATABASE_URL (required), DB_POOL_MAX, HOST, PORT (Render sets PORT), SCHEMA_FILE,
-  MANAGER_IDS, NWS_USER_AGENT, CELL_DEG, AUTO_SCAN_MINUTES (0 turns the scan off),
-  AUTO_DECIDE (on/off), AUTO_DECIDE_MIN_CONFIDENCE (low/medium/high),
+  MANAGER_IDS, SESSION_HOURS, NWS_USER_AGENT, CELL_DEG, AUTO_SCAN_MINUTES (0 turns the scan off),
+  AUTO_DECIDE (on/off, default off), AUTO_DECIDE_MIN_CONFIDENCE (low/medium/high),
   ALL_CLEAR (on/off), ALL_CLEAR_HOLD_MINUTES, SNAPSHOT_RETENTION_DAYS,
   API_MIN_INTERVAL_SECONDS, MIN_LOCATION_INTERVAL_SECONDS,
-  NOTIFY_WEBHOOK_URL, NOTIFY_WEBHOOK_TOKEN
+  NOTIFY_WEBHOOK_URL, NOTIFY_WEBHOOK_TOKEN,
+  DEMO_GEO (on = seed made-up facility coordinates, testing only),
+  DEMO_FLAGS (on = seed two demo essential/no-telework employees, testing only)
 
 Routes
   GET  /api/health
   POST /api/login                          {"userId": "482917"}
   GET  /api/me
-  GET  /api/locations                     all work sites for the dashboard map
-  GET  /api/weather?locationId=..         selected-site NWS forecast and alerts
+  GET  /api/employees                      (manager) roster for the dashboard
   GET  /api/locations/<id>                 PUT (manager): {"lat":..,"lon":..,"tz":"America/Chicago"}
   GET  /api/alerts?lat=..&lon=..
   GET  /api/shelters?lat=..&lon=..
@@ -81,12 +84,29 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import psycopg
 from psycopg_pool import ConnectionPool
 
 
 # ======================================================================
 # Config
 # ======================================================================
+
+def load_env_file():
+    """Read KEY=value lines from backend/.env (if it exists) into the environment.
+    Real environment variables win, so settings on Render are never overridden."""
+    path = Path(__file__).resolve().parent / ".env"
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+load_env_file()  # must run before the settings below are read
 
 HERE = Path(__file__).resolve().parent
 PROJECT_DIRECTORY = HERE.parent
@@ -103,14 +123,20 @@ PORT = int(os.environ.get("PORT", "3000"))
 MAX_REQUEST_BYTES = 16_384
 IMPORT_MAX_BYTES = 5_000_000
 
-# Demo managers. Replace with a real role column or identity provider.
-# Whitespace around the commas is ignored ("482917, 305764" works).
-MANAGER_IDS = {i.strip() for i in os.environ.get("MANAGER_IDS", "482917,305764").split(",") if i.strip()}
+
+def env_on(name, default="off"):
+    return os.environ.get(name, default).strip().lower() in ("on", "1", "true", "yes")
+
+
+# Managers are set only through the environment. Whitespace around the commas is ignored.
+MANAGER_IDS = {i.strip() for i in os.environ.get("MANAGER_IDS", "").split(",") if i.strip()}
+if not MANAGER_IDS:
+    print("WARNING: MANAGER_IDS is not set, so nobody can use the manager features.")
+
+SESSION_HOURS = int(os.environ.get("SESSION_HOURS", "12"))
 
 # NWS asks every client to identify itself. Change the email.
 NWS_ALERTS_URL = "https://api.weather.gov/alerts/active"
-NWS_POINTS_URL = "https://api.weather.gov/points"
-GEOCODER_URL = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
 NWS_HEADERS = {
     "User-Agent": os.environ.get("NWS_USER_AGENT", "ClosureCall/0.1 (your-email@example.com)"),
     "Accept": "application/geo+json",
@@ -132,15 +158,16 @@ SNAPSHOT_RETENTION_DAYS = int(os.environ.get("SNAPSHOT_RETENTION_DAYS", "30"))
 
 AUTO_SCAN_MINUTES = int(os.environ.get("AUTO_SCAN_MINUTES", "10"))
 # When on, the background scan sends facility notifications by itself, with no manager step.
+# Default is OFF: review the rules first, then switch it on with AUTO_DECIDE=on.
 # Only recommendations at or above the confidence below are sent automatically (high = alert
 # Observed, medium = Likely, low = Possible). Anything lower waits for a manager.
-AUTO_DECIDE = os.environ.get("AUTO_DECIDE", "on").strip().lower() in ("on", "1", "true", "yes")
+AUTO_DECIDE = env_on("AUTO_DECIDE", "off")
 AUTO_DECIDE_MIN_CONFIDENCE = os.environ.get("AUTO_DECIDE_MIN_CONFIDENCE", "medium").strip().lower()
 CONFIDENCE_RANK = {"low": 0, "medium": 1, "high": 2}
 AUTO_SCAN_REPEAT_HOURS = 6    # don't re-recommend the same posture for a facility sooner than this
 
 # All-clear: after a notice, the NWS must stay quiet this long before "normal operations may resume" goes out.
-ALL_CLEAR = os.environ.get("ALL_CLEAR", "on").strip().lower() in ("on", "1", "true", "yes")
+ALL_CLEAR = env_on("ALL_CLEAR", "on")
 ALL_CLEAR_HOLD_MINUTES = int(os.environ.get("ALL_CLEAR_HOLD_MINUTES", "20"))
 
 # Where real push/SMS/email delivery happens. If unset, notifications are only recorded
@@ -232,7 +259,8 @@ ALTER TABLE recommendations ADD COLUMN IF NOT EXISTS cleared_at TEXT;
 ALTER TABLE recommendations ADD COLUMN IF NOT EXISTS clear_seen_at TEXT;
 """
 
-# Synthetic coordinates so every facility can be tested. Replace with real ones.
+# Synthetic coordinates, used ONLY when DEMO_GEO=on (testing). Real deployments load real
+# coordinates with load_geo.py.
 DEMO_CITIES = [
     ("Des Moines", 41.5868, -93.6250, "America/Chicago"),
     ("Kansas City", 39.0997, -94.5786, "America/Chicago"),
@@ -255,7 +283,7 @@ DEMO_CITIES = [
     ("Buffalo", 42.8864, -78.8784, "America/New_York"),
     ("Albany", 42.6526, -73.7562, "America/New_York"),
 ]
-# Demo flags for facility 1 only. Replace with real HR data.
+# Demo flags for facility 1 only (used only when DEMO_FLAGS=on). Replace with real HR data.
 DEMO_ESSENTIAL_IDS = ("482917", "305764")
 DEMO_NO_TELEWORK_IDS = ("926541",)
 
@@ -335,16 +363,17 @@ def init_db():
             conn.script(SCHEMA_FILE.read_text(encoding="utf-8"))
         conn.script(APP_SCHEMA)
 
-        if conn.execute("SELECT COUNT(*) FROM location_geo").fetchone()[0] == 0:
+        # Made-up coordinates are only for testing. Real ones come from load_geo.py.
+        if env_on("DEMO_GEO") and conn.execute("SELECT COUNT(*) FROM location_geo").fetchone()[0] == 0:
             for (location_id,) in conn.execute("SELECT location_id FROM locations ORDER BY location_id").fetchall():
-                _, lat, lon, tz = DEMO_CITIES[(location_id - 1) % len(DEMO_CITIES)]
+                city, lat, lon, tz = DEMO_CITIES[(location_id - 1) % len(DEMO_CITIES)]
                 shift = ((location_id - 1) // len(DEMO_CITIES)) * 0.05
                 conn.execute(
                     "INSERT INTO location_geo (location_id, lat, lon, tz) VALUES (?, ?, ?, ?)",
                     (location_id, round(lat + shift, 4), round(lon + shift, 4), tz),
                 )
 
-        if conn.execute("SELECT COUNT(*) FROM employee_flags").fetchone()[0] == 0:
+        if env_on("DEMO_FLAGS") and conn.execute("SELECT COUNT(*) FROM employee_flags").fetchone()[0] == 0:
             for user_id in DEMO_ESSENTIAL_IDS:
                 conn.execute("INSERT INTO employee_flags (user_id, is_essential) "
                              "SELECT user_id, 1 FROM employees WHERE user_id = ? "
@@ -354,6 +383,8 @@ def init_db():
                              "SELECT user_id, 0 FROM employees WHERE user_id = ? "
                              "ON CONFLICT (user_id) DO NOTHING", (user_id,))
 
+        # Privacy: snapshots from people's own locations used to store coordinates. Only facility
+        # snapshots (whose coordinates match a facility) keep them. Safe to run on every start.
         conn.execute("UPDATE snapshots SET lat = NULL, lon = NULL WHERE lat IS NOT NULL AND NOT EXISTS "
                      "(SELECT 1 FROM location_geo g WHERE g.lat = snapshots.lat AND g.lon = snapshots.lon)")
 
@@ -363,8 +394,8 @@ def init_db():
 # ======================================================================
 
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
-USER_ID_RE = re.compile(r"^[0-9]{6}$")
-VALID_DAYS = {"Mon-Fri", "Mon-Thu", "Tue-Sat", "Wed-Sun", "Tue-Fri", "Sun-Thu"}
+USER_ID_RE = re.compile(r"^[0-9]{6}$")  # the schema requires exactly six digits
+VALID_DAYS = {"Mon-Fri", "Mon-Thu", "Tue-Sat", "Wed-Sun", "Tue-Fri", "Sun-Thu"}  # schema CHECK list
 PHONE_RE = re.compile(r"^\+?[0-9]{7,15}$")
 TRUTHY = {"1", "true", "yes", "y", "t"}
 
@@ -414,7 +445,11 @@ def clean_employee(rec):
 
 
 def upsert_employees(records):
-    """Insert or update employees and their contact flags without changing location consent."""
+    """Insert or update employees and their contact flags.
+
+    Safe to run repeatedly. It never touches location_consent, so a re-sync does not
+    switch anyone's location sharing on or off. Fields left out of a record are left alone.
+    """
     summary = {"received": len(records), "added": 0, "updated": 0, "rejected": []}
     with get_db() as conn:
         known_locations = {r[0] for r in conn.execute("SELECT location_id FROM locations")}
@@ -455,12 +490,16 @@ def upsert_employees(records):
                      emp["email"], emp["phone"]),
                 )
     summary["rejectedCount"] = len(summary["rejected"])
-    summary["rejected"] = summary["rejected"][:50]
+    summary["rejected"] = summary["rejected"][:50]  # keep responses small
     return summary
 
 
 def update_contacts(records):
-    """Update contact details and employee flags without changing names or location consent."""
+    """Set email, phone and the essential/telework flags for people already in the employees table.
+
+    Your names are already loaded from the schema; this is how email/phone get attached so the
+    sms and email channels have somewhere to go. Missing fields are left unchanged.
+    """
     summary = {"received": len(records), "updated": 0, "rejected": []}
     with get_db() as conn:
         for rec in records:
@@ -482,8 +521,7 @@ def update_contacts(records):
                 continue
             essential = to_flag(rec.get("isEssential", rec.get("is_essential")))
             telework = to_flag(rec.get("teleworkEligible", rec.get("telework_eligible")))
-            conn.execute("INSERT INTO employee_flags (user_id) VALUES (?) "
-                         "ON CONFLICT (user_id) DO NOTHING", (user_id,))
+            conn.execute("INSERT INTO employee_flags (user_id) VALUES (?) ON CONFLICT (user_id) DO NOTHING", (user_id,))
             conn.execute(
                 "UPDATE employee_flags SET email = COALESCE(?, email), phone = COALESCE(?, phone), "
                 "is_essential = COALESCE(?, is_essential), telework_eligible = COALESCE(?, telework_eligible) "
@@ -506,9 +544,9 @@ def _hash(prev_hash, ts, kind, body):
 
 
 def append_log(kind, payload):
-    """Add one entry whose hash covers the previous entry."""
+    """Add one entry. Each entry's hash covers the previous hash, so edits are detectable."""
     with log_lock, get_db() as conn:
-        conn.execute("SELECT pg_advisory_xact_lock(7001)")
+        conn.execute("SELECT pg_advisory_xact_lock(7001)")  # keeps the chain intact across instances
         row = conn.execute("SELECT hash FROM decision_log ORDER BY id DESC LIMIT 1").fetchone()
         prev_hash = row["hash"] if row else "GENESIS"
         ts = now_iso()
@@ -535,9 +573,6 @@ def verify_log():
 # NWS ingest
 # ======================================================================
 
-
-# ---------- NWS ingest ----------
-
 def fetch_nws_alerts(lat, lon):
     """Return a snapshot dict. Failures are recorded, not hidden."""
     fetched_at = now_iso()
@@ -550,99 +585,6 @@ def fetch_nws_alerts(lat, lon):
     except (URLError, TimeoutError, json.JSONDecodeError, ValueError, OSError) as err:
         return {"source": "nws_alerts", "ok": False, "fetched_at": fetched_at,
                 "error": str(err), "raw": None}
-
-
-def fetch_nws_json(url):
-    with urlopen(Request(url, headers=NWS_HEADERS), timeout=10) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-    if not isinstance(data, dict):
-        raise ValueError("The National Weather Service returned an invalid response.")
-    return data
-
-
-geocode_cache = {}
-geocode_cache_lock = Lock()
-nominatim_lock = Lock()
-last_nominatim_request = 0.0
-
-
-def geocode_location(address, location_id):
-    global last_nominatim_request
-
-    with geocode_cache_lock:
-        cached = geocode_cache.get(location_id)
-    if cached:
-        return cached
-
-    census_query = urlencode({
-        'address': address,
-        'benchmark': 'Public_AR_Current',
-        'format': 'json',
-    })
-    census_url = f"{GEOCODER_URL}?{census_query}"
-    with urlopen(Request(census_url, headers={"User-Agent": NWS_HEADERS["User-Agent"]}), timeout=15) as resp:
-        census_data = json.loads(resp.read().decode("utf-8"))
-    if not isinstance(census_data, dict):
-        raise ValueError("Census Geocoder returned an invalid response.")
-    census_result = census_data.get("result")
-    if not isinstance(census_result, dict):
-        raise ValueError("Census Geocoder returned an invalid result.")
-    matches = census_result.get("addressMatches", [])
-    if matches:
-        match = matches[0]
-        if not isinstance(match, dict) or not isinstance(match.get("coordinates"), dict):
-            raise ValueError("Census Geocoder returned invalid coordinates.")
-        coordinates = match["coordinates"]
-        result = {
-            "latitude": float(coordinates["y"]),
-            "longitude": float(coordinates["x"]),
-            "matchedAddress": matches[0].get("matchedAddress", address),
-            "precision": "address",
-        }
-    else:
-        address_parts = [part.strip() for part in address.split(",")]
-        if len(address_parts) < 2 or not address_parts[1]:
-            raise LookupError("The selected address could not be geocoded.")
-        locality = ", ".join(address_parts[1:])
-        nominatim_url = "https://nominatim.openstreetmap.org/search?" + urlencode({
-            "q": locality,
-            "format": "jsonv2",
-            "limit": 1,
-            "countrycodes": "us",
-        })
-        with nominatim_lock:
-            wait_seconds = 1.0 - (monotonic() - last_nominatim_request)
-            if wait_seconds > 0:
-                time.sleep(wait_seconds)
-            with urlopen(Request(nominatim_url, headers={
-                "User-Agent": "FieldcastAdminDashboard/1.0",
-                "Accept": "application/json",
-            }), timeout=15) as resp:
-                nominatim_data = json.loads(resp.read().decode("utf-8"))
-            last_nominatim_request = monotonic()
-        if not isinstance(nominatim_data, list) or not nominatim_data:
-            raise LookupError("The selected address and its locality could not be geocoded.")
-        locality_match = nominatim_data[0]
-        if not isinstance(locality_match, dict):
-            raise ValueError("OpenStreetMap Nominatim returned an invalid result.")
-        result = {
-            "latitude": float(locality_match["lat"]),
-            "longitude": float(locality_match["lon"]),
-            "matchedAddress": locality_match.get("display_name", locality),
-            "precision": "locality",
-        }
-
-    if not (-90 <= result["latitude"] <= 90 and -180 <= result["longitude"] <= 180):
-        raise ValueError("Geocoder returned coordinates outside valid ranges.")
-    result["latitude"] = round(result["latitude"], 4)
-    result["longitude"] = round(result["longitude"], 4)
-    with geocode_cache_lock:
-        geocode_cache[location_id] = result
-    return result
-
-
-weather_cache = {}
-weather_cache_lock = Lock()
 
 
 def summarize_alerts(raw):
@@ -804,7 +746,7 @@ def fetch_shelters(lat, lon, radius_miles=50, limit=3):
 # ======================================================================
 
 def prune_caches():
-    """Drop expired cache entries, idle per-cell locks and old rate-limit marks."""
+    """Drop expired cache entries, idle per-cell locks, old rate-limit marks and expired sessions."""
     now = monotonic()
     with alert_cache_lock:
         for k in [k for k, v in alert_cache.items() if now - v["at"] > ALERT_CACHE_SECONDS]:
@@ -817,6 +759,9 @@ def prune_caches():
     with rate_lock:
         for k in [k for k, t in rate_marks.items() if now - t > 3600]:
             del rate_marks[k]
+    with sessions_lock:
+        for k in [k for k, (_user, expires) in sessions.items() if expires < now]:
+            del sessions[k]
 
 
 def purge_old_snapshots():
@@ -834,7 +779,7 @@ def purge_old_snapshots():
 # Rules engine (pure: same inputs always give the same output)
 # ======================================================================
 
-RULES_VERSION = "2026-10-10-draft1"
+RULES_VERSION = "2026-10-10-draft2"
 POSTURE_ORDER = ["normal", "delay", "early_dismissal", "telework", "closure"]
 POSTURE_RANK = {p: i for i, p in enumerate(POSTURE_ORDER)}
 POSTURE_LABEL = {
@@ -856,7 +801,8 @@ RULES = [
      "urgency": ACT_NOW_URGENCY, "certainty": LIKELY_CERTAINTY, "anchor": ANCHOR_TODO},
     {"id": "R3", "posture": "early_dismissal", "severity": {"Severe", "Extreme"},
      "urgency": {"Future"}, "certainty": LIKELY_CERTAINTY, "anchor": ANCHOR_TODO},
-    {"id": "R4", "posture": "delay", "severity": {"Moderate", "Severe", "Extreme"},
+    # R4 no longer matches Moderate alerts (routine heat advisories, fog and the like).
+    {"id": "R4", "posture": "delay", "severity": {"Severe", "Extreme"},
      "urgency": {"Immediate", "Expected", "Future"},
      "certainty": {"Observed", "Likely", "Possible"}, "anchor": ANCHOR_TODO},
 ]
@@ -908,7 +854,7 @@ def evaluate(facility_name, snapshot_meta, alerts):
         below = f" ({len(alerts)} active alert(s) fall below every threshold)" if alerts else ""
         rationale = (f"As of {fetched}, the NWS reports no active alerts at {facility_name} "
                      f"that meet any closure threshold{below}. Recommended posture: normal operations.")
-        changes.append("Any new alert with severity Moderate or higher would trigger rule R4 (delay) or above.")
+        changes.append("Any new alert with severity Severe or higher would trigger rule R4 (delay) or above.")
         threshold = None
         headline = None
     else:
@@ -1406,7 +1352,10 @@ SCAN_LOCK_KEY = 7002
 
 
 def scan_facilities():
-    """Check every facility once. With AUTO_DECIDE on, notifications go out without a manager step."""
+    """Check every facility once. With AUTO_DECIDE on, notifications go out without a manager step.
+
+    Facilities with no coordinates (nothing in location_geo) are skipped.
+    """
     with get_db() as conn:
         ids = [r[0] for r in conn.execute("SELECT location_id FROM location_geo ORDER BY location_id")]
     created = 0
@@ -1464,9 +1413,8 @@ def scan_loop():
 ROUTES = [(m, re.compile(p), name, access) for m, p, name, access in [
     ("GET", r"/api/health", "h_health", "public"),
     ("POST", r"/api/login", "h_login", "public"),
-    ("GET", r"/api/locations", "h_locations", "public"),
-    ("GET", r"/api/weather", "h_weather", "public"),
     ("GET", r"/api/me", "h_me", "auth"),
+    ("GET", r"/api/employees", "h_employees_list", "manager"),
     ("GET", r"/api/locations/(\d+)", "h_location_get", "auth"),
     ("PUT", r"/api/locations/(\d+)", "h_location_put", "manager"),
     ("GET", r"/api/alerts", "h_alerts", "auth"),
@@ -1489,7 +1437,7 @@ ROUTES = [(m, re.compile(p), name, access) for m, p, name, access in [
     ("POST", r"/api/entries", "h_entries_create", "auth"),
 ]]
 
-sessions = {}  # token -> user_id
+sessions = {}  # token -> (user_id, expires at monotonic time). In memory: a restart logs everyone out.
 sessions_lock = Lock()
 
 
@@ -1540,6 +1488,11 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
                         "delivery": "webhook" if NOTIFY_WEBHOOK_URL else "simulated"})
 
     def h_login(self, employee, query):
+        client = (self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+                  or self.client_address[0])
+        if too_fast(client, "login", 2):
+            self.send_json({"error": "Too many attempts. Wait a moment and try again."}, status=429)
+            return
         payload = self.read_json_object()
         if payload is None:
             return
@@ -1552,7 +1505,7 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
             return
         token = secrets.token_urlsafe(24)
         with sessions_lock:
-            sessions[token] = row["user_id"]
+            sessions[token] = (row["user_id"], monotonic() + SESSION_HOURS * 3600)
         self.send_json({"token": token, "userId": row["user_id"], "name": row["full_name"],
                         "isManager": row["user_id"] in MANAGER_IDS})
 
@@ -1570,152 +1523,24 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
                         "locationSharing": bool(row["consent"]),
                         "isManager": row["user_id"] in MANAGER_IDS})
 
-    # ----- facilities -----
-    def h_locations(self, employee, query):
+    # ----- roster (dashboard) -----
+    def h_employees_list(self, employee, query):
         with get_db() as conn:
-            has_address = conn.execute(
-                "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
-                "WHERE table_schema = current_schema() AND table_name = 'locations' "
-                "AND column_name = 'address')"
-            ).fetchone()[0]
-            address_field = "l.address" if has_address else "NULL"
             rows = conn.execute(
-                f"SELECT l.location_id, l.name, {address_field} AS address, g.lat, g.lon "
-                "FROM locations l LEFT JOIN location_geo g ON g.location_id = l.location_id "
-                "ORDER BY l.name"
-            ).fetchall()
-        self.send_json([
-            {"locationId": row["location_id"], "name": row["name"], "address": row["address"],
-             "latitude": row["lat"], "longitude": row["lon"]}
-            for row in rows
-        ])
+                "SELECT e.user_id, e.full_name, e.shift_start, e.shift_end, e.days_of_week, "
+                "e.location_id, l.name AS location_name, l.address AS location_address, g.tz "
+                "FROM employees e JOIN locations l ON l.location_id = e.location_id "
+                "LEFT JOIN location_geo g ON g.location_id = e.location_id "
+                "ORDER BY lower(e.full_name), e.user_id").fetchall()
+        self.send_json([{
+            "userId": r["user_id"], "fullName": r["full_name"],
+            "shiftStart": r["shift_start"], "shiftEnd": r["shift_end"],
+            "daysOfWeek": r["days_of_week"], "locationId": r["location_id"],
+            "locationName": r["location_name"], "locationAddress": r["location_address"],
+            "locationTimezone": r["tz"],
+        } for r in rows])
 
-    def h_weather(self, employee, query):
-        raw_location_id = query.get("locationId", [""])[0]
-        try:
-            location_id = int(raw_location_id)
-        except (TypeError, ValueError):
-            self.send_json({"error": "A valid locationId is required."}, status=400)
-            return
-
-        with get_db() as conn:
-            has_address = conn.execute(
-                "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
-                "WHERE table_schema = current_schema() AND table_name = 'locations' "
-                "AND column_name = 'address')"
-            ).fetchone()[0]
-            address_field = "l.address" if has_address else "NULL"
-            loc = conn.execute(
-                f"SELECT l.location_id, l.name, {address_field} AS address, g.lat, g.lon "
-                "FROM locations l LEFT JOIN location_geo g ON g.location_id = l.location_id "
-                "WHERE l.location_id = ?",
-                (location_id,),
-            ).fetchone()
-        if loc is None:
-            self.send_json({"error": "Location not found."}, status=404)
-            return
-
-        with weather_cache_lock:
-            cached = weather_cache.get(location_id)
-            if cached and monotonic() - cached["cachedAt"] < ALERT_CACHE_SECONDS:
-                self.send_json(cached["value"])
-                return
-
-        address = loc["address"]
-        geocoded = None
-        try:
-            if address and address.strip():
-                try:
-                    geocoded = geocode_location(address, location_id)
-                    latitude, longitude = geocoded["latitude"], geocoded["longitude"]
-                except (URLError, TimeoutError, json.JSONDecodeError, ValueError, LookupError,
-                        KeyError, TypeError, OSError):
-                    if loc["lat"] is None or loc["lon"] is None:
-                        raise
-                    latitude, longitude = loc["lat"], loc["lon"]
-                    geocoded = {"precision": "configured-site", "matchedAddress": None}
-            elif loc["lat"] is not None and loc["lon"] is not None:
-                latitude, longitude = loc["lat"], loc["lon"]
-                geocoded = {"precision": "configured-site", "matchedAddress": None}
-            else:
-                self.send_json({"error": "This work site has no address or configured coordinates."}, status=404)
-                return
-
-            points = fetch_nws_json(f"{NWS_POINTS_URL}/{latitude},{longitude}")
-            point_properties = points.get("properties")
-            if not isinstance(point_properties, dict):
-                raise ValueError("The National Weather Service returned an invalid point response.")
-            forecast_url = point_properties.get("forecastHourly")
-            if not forecast_url:
-                raise ValueError("The National Weather Service did not provide an hourly forecast URL.")
-            hourly = fetch_nws_json(forecast_url)
-            forecast_properties = hourly.get("properties")
-            if not isinstance(forecast_properties, dict):
-                raise ValueError("The National Weather Service returned an invalid forecast response.")
-            periods = forecast_properties.get("periods", [])
-            if not periods:
-                raise ValueError("The National Weather Service returned no hourly forecast periods.")
-            if not isinstance(periods[0], dict):
-                raise ValueError("The National Weather Service returned an invalid hourly forecast period.")
-        except (URLError, TimeoutError, json.JSONDecodeError, ValueError, LookupError,
-                KeyError, TypeError, OSError) as err:
-            self.send_json({"error": f"Unable to load the National Weather Service forecast: {err}"}, status=502)
-            return
-
-        period = periods[0]
-        probability = (period.get("probabilityOfPrecipitation") or {}).get("value")
-        humidity = (period.get("relativeHumidity") or {}).get("value")
-        alert_snapshot = fetch_nws_alerts(latitude, longitude)
-        snapshot_id = save_snapshot(alert_snapshot, latitude, longitude)
-        alerts = []
-        alerts_error = None
-        if alert_snapshot["ok"]:
-            for feature in (alert_snapshot["raw"] or {}).get("features", []):
-                if not isinstance(feature, dict):
-                    continue
-                properties = feature.get("properties") or {}
-                if not isinstance(properties, dict):
-                    continue
-                if properties.get("status") not in (None, "Actual"):
-                    continue
-                alerts.append({
-                    "id": properties.get("id") or feature.get("id"),
-                    "event": properties.get("event"),
-                    "severity": properties.get("severity"),
-                    "headline": properties.get("headline"),
-                    "geometry": feature.get("geometry"),
-                })
-        else:
-            alerts_error = f"Active NWS alerts could not be loaded: {alert_snapshot['error']}"
-
-        result = {
-            "location": {
-                "id": location_id,
-                "name": loc["name"],
-                "address": address,
-                "matchedAddress": geocoded["matchedAddress"],
-                "geocodePrecision": geocoded["precision"],
-            },
-            "coordinates": {"latitude": latitude, "longitude": longitude},
-            "forecast": {
-                "startTime": period.get("startTime"),
-                "shortForecast": period.get("shortForecast"),
-                "temperature": period.get("temperature"),
-                "temperatureUnit": period.get("temperatureUnit"),
-                "windSpeed": period.get("windSpeed"),
-                "windDirection": period.get("windDirection"),
-                "probabilityOfPrecipitation": probability,
-                "relativeHumidity": humidity,
-            },
-            "alerts": alerts,
-            "alertsError": alerts_error,
-            "snapshotId": snapshot_id,
-            "updatedAt": now_iso(),
-        }
-        with weather_cache_lock:
-            weather_cache[location_id] = {"cachedAt": monotonic(), "value": result}
-        self.send_json(result)
-
+    # ----- facilities -----
     def h_location_get(self, employee, query, location_id):
         loc = load_location(int(location_id))
         if loc is None:
@@ -1863,7 +1688,7 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
             return
         loc = load_location(payload.get("locationId") if isinstance(payload.get("locationId"), int) else -1)
         if loc is None:
-            self.send_json({"error": "Unknown locationId."}, status=404)
+            self.send_json({"error": "Unknown locationId, or that facility has no coordinates yet."}, status=404)
             return
         rec_id, rec, package = create_recommendation(loc, employee["user_id"])
         self.send_json({"id": rec_id, "status": "pending", "recommendation": rec, "package": package}, status=201)
@@ -2007,9 +1832,13 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
         header = self.headers.get("Authorization", "")
         if not header.startswith("Bearer "):
             return None
+        token = header[len("Bearer "):]
         with sessions_lock:
-            user_id = sessions.get(header[len("Bearer "):])
-        return {"user_id": user_id} if user_id else None
+            entry = sessions.get(token)
+            if entry and entry[1] < monotonic():
+                del sessions[token]
+                entry = None
+        return {"user_id": entry[0]} if entry else None
 
     def read_json_object(self, max_bytes=MAX_REQUEST_BYTES):
         """Read a JSON object body. Sends the error itself and returns None on failure."""
