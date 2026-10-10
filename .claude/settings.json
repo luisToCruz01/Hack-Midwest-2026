@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -I -c ' *)",
+      "Bash(python -I outline.py dom/4001.html 40 \"Natural Forest\" 160)",
+      "Bash(python -I outline.py dom/4001.html 40 \"Next Chapter\" 75)",
+      "Bash(python -I -)",
+      "Bash(timeout 60 python -I -X utf8 css.py dom/4001.html @'class=\"framer-1gch216\"' b94vys tazgs bsksui px7d5v 1gch216 19wrz8z bjlf6p o5zpfv 1u6kfsy)",
+      "Bash(python -I -X utf8 -)",
+      "Bash(python -I -X utf8 outline.py dom/4001.html 40)",
+      "Bash(timeout 60 python -I -X utf8 css.py dom/4001.html 19z4um thfaws 1fbf4wy mz5myr 14vn4vz h1ojdi-container 1dew4ml zze1hm 1ch2tl4 16mrpo 13evtj5 ag6nye 1tsrpbt bf1u16 1e3tgf1 e1vvbr-container)",
+      "Bash(grep -oE '<div class=\"framer-dbu25[^>]*>.{0,600}' dom/4001.html)",
+      "Bash(grep -oE '.{0,300}color:[^;]*;[^>]*>Your Next' dom/4001.html)",
+      "Bash(python -I -X utf8 outline.py dom/4002.html 60 \"Championship Course\" 70)",
+      "Bash(python -I -X utf8 outline.py dom/4002.html 60)",
+      "Bash(python -I -X utf8 outline.py dom/4003.html 60)",
+      "Bash(python -I -X utf8 outline.py dom/4003.html 60 \"Get for free\" 400)",
+      "Bash(grep -v \"^\\\\s*» .$\")",
+      "Bash(grep -vE \"^\\\\s*<span>$\")",
+      "Bash(python -I -X utf8 outline.py dom/4004.html 60)",
+      "Bash(python -I -X utf8 outline.py dom/4004.html 60 \"Impactful\" 60)",
+      "Bash(python -I -X utf8 outline.py dom/4005.html 60 \"Quality & Trust\" 120)",
+      "Bash(grep -oE '<h6[^>]*>Quality &amp; Trust|class=\"framer-jkvw9c\"[^>]*>.{0,300}|class=\"framer-16ox48f\"[^>]*>.{0,300}|class=\"framer-ei95j3\"[^>]*>.{0,250}' dom/4005.html)",
+      "Bash(python -I -X utf8 outline.py dom/4005.html 60)",
+      "Bash(python -I -X utf8 outline.py dom/4002.html 60 \"Desktop close\" 200)",
+      "Read(//dev/**)",
+      "Bash(python -I -X utf8 -c ' *)",
+      "Bash(python -c \"import playwright; print\\('pw ok'\\)\")",
+      "Bash(npm ls *)",
+      "Bash(python -I shots.py http://localhost:4010/ cs 1536 864)",
+      "Bash(python shots.py http://localhost:4010/ cs 1536 864)",
+      "Bash(python -c \"import PIL; print\\('PIL', PIL.__version__\\)\")",
+      "Bash(python shot.py http://127.0.0.1:3000/landing/ hero)",
+      "Bash(git add *)",
+      "Bash(git commit -q -m 'Replace landing hero with layered forest scene *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:3000/landing/)"
+    ]
+  }
+}
