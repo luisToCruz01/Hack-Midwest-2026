@@ -499,12 +499,19 @@ h2 {
 
 .table-toolbar {
   display: flex;
+  flex-wrap: wrap;
   min-height: 70px;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
   padding: 1rem 1.25rem;
   border-bottom: 1px solid rgb(145 170 167 / 12%);
+}
+
+.employee-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
 }
 
 .search-field {

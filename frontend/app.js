@@ -3,6 +3,7 @@ const pageViews = document.querySelectorAll("[data-view]");
 const employeeRows = document.querySelector("#employee-rows");
 const employeeSearch = document.querySelector("#employee-search");
 const employeeFilter = document.querySelector("#employee-filter");
+const employeeLocationFilter = document.querySelector("#employee-location-filter");
 const alertDialog = document.querySelector("#alert-dialog");
 const alertForm = document.querySelector("#alert-form");
 
@@ -73,6 +74,7 @@ function mapDatabaseEmployee(employee) {
   return {
     id: employee.userId,
     name: employee.fullName,
+    location: employee.location,
     schedule: {
       days: expandDaysOfWeek(employee.daysOfWeek),
       startTime: employee.shiftStart,
@@ -216,12 +218,14 @@ function renderOverview() {
 function renderEmployees() {
   const search = employeeSearch.value.trim().toLowerCase();
   const selectedStatus = employeeFilter.value;
+  const selectedLocation = employeeLocationFilter.value;
   const filteredEmployees = employees.filter((employee) => {
     const employeeStatus = getEmployeeStatus(employee);
     const matchesSearch = [employee.name, employee.id, employeeStatus]
       .some((value) => value.toLowerCase().includes(search));
     const matchesStatus = selectedStatus === "all" || employeeStatus === selectedStatus;
-    return matchesSearch && matchesStatus;
+    const matchesLocation = selectedLocation === "all" || employee.location === selectedLocation;
+    return matchesSearch && matchesStatus && matchesLocation;
   });
 
   employeeRows.replaceChildren();
@@ -242,6 +246,7 @@ function renderEmployees() {
     const schedule = document.createElement("td");
     const status = document.createElement("td");
     const statusPill = document.createElement("span");
+    const location = document.createElement("td");
 
     person.className = "employee-cell";
     avatar.className = "avatar";
@@ -260,9 +265,30 @@ function renderEmployees() {
     statusPill.className = `status-pill status-${escapeClassName(currentStatus)}`;
     statusPill.textContent = currentStatus;
     status.append(statusPill);
-    row.append(personCell, schedule, status);
+    location.textContent = "";
+    row.append(personCell, schedule, status, location);
     employeeRows.append(row);
   }
+}
+
+function renderEmployeeLocationFilter() {
+  const selectedLocation = employeeLocationFilter.value;
+  const locations = [...new Set(employees.map((employee) => employee.location))]
+    .filter(Boolean)
+    .sort((left, right) => left.localeCompare(right));
+  const allLocations = document.createElement("option");
+  allLocations.value = "all";
+  allLocations.textContent = "All locations";
+  employeeLocationFilter.replaceChildren(allLocations);
+
+  for (const location of locations) {
+    const option = document.createElement("option");
+    option.value = location;
+    option.textContent = location;
+    employeeLocationFilter.append(option);
+  }
+
+  employeeLocationFilter.value = locations.includes(selectedLocation) ? selectedLocation : "all";
 }
 
 function renderAlerts() {
@@ -355,6 +381,7 @@ document.querySelectorAll("[data-close-dialog]").forEach((button) => {
 
 employeeSearch.addEventListener("input", renderEmployees);
 employeeFilter.addEventListener("change", renderEmployees);
+employeeLocationFilter.addEventListener("change", renderEmployees);
 document.querySelector("#alert-filter").addEventListener("change", renderAlerts);
 
 document.querySelector("#alert-list").addEventListener("click", (event) => {
@@ -435,6 +462,7 @@ async function loadEmployees() {
 
     employees = records.map(mapDatabaseEmployee);
     employeesLoading = false;
+    renderEmployeeLocationFilter();
     renderAll();
   } catch (error) {
     employeesLoading = false;

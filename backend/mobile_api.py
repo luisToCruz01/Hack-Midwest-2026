@@ -26,8 +26,10 @@ class MobileAPIHandler(BaseHTTPRequestHandler):
                 with sqlite3.connect(database_uri, uri=True) as database:
                     employees = database.execute(
                         """
-                        SELECT user_id, full_name, shift_start, shift_end, days_of_week
+                        SELECT employees.user_id, employees.full_name, employees.shift_start,
+                               employees.shift_end, employees.days_of_week, locations.name
                         FROM employees
+                        JOIN locations ON locations.location_id = employees.location_id
                         ORDER BY full_name COLLATE NOCASE
                         """
                     ).fetchall()
@@ -46,8 +48,9 @@ class MobileAPIHandler(BaseHTTPRequestHandler):
                     "shiftStart": shift_start,
                     "shiftEnd": shift_end,
                     "daysOfWeek": days_of_week,
+                    "location": location,
                 }
-                for user_id, full_name, shift_start, shift_end, days_of_week in employees
+                for user_id, full_name, shift_start, shift_end, days_of_week, location in employees
             ])
             return
 

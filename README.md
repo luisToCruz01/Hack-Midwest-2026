@@ -31,10 +31,11 @@ It listens on <http://127.0.0.1:3001> by default. Set `MOBILE_API_HOST` or
 The Employees page reads the employee roster from SQLite through
 `GET /api/employees`. Employee details shown there come from the database;
 working/off-shift status is calculated from each employee's workdays and shift
-times. Dashboard alert and work-site edits are sample frontend state and reset
-when the page reloads. The mobile server exposes `GET /api/health` and
-`GET /api/employees`; the main server also provides login, weather-alert
-snapshots, and SQLite-backed field reports.
+times. The roster can be filtered by status and database location; employee
+location cells are intentionally left blank. Dashboard alert and work-site
+edits are sample frontend state and reset when the page reloads. The mobile
+server exposes `GET /api/health` and `GET /api/employees`; the main server also
+provides login, weather-alert snapshots, and SQLite-backed field reports.
 
 ## Employee database
 
