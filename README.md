@@ -25,18 +25,22 @@ and `POST /api/entries` endpoints also keep data in memory only.
 
 ## Employee database
 
-`database/fieldcast.db` is a SQLite database seeded with the 30 employees,
-their shift times, workdays, and user IDs. User IDs are stored as text to
-preserve leading zeros. The SQL schema and roster data are in
-`database/schema.sql`. To create or refresh the database from the project root:
+`database/fieldcast.db` is a SQLite database seeded with 200 numbered locations
+and 30 employees per location (6,000 employees total). Location 001 preserves
+the original roster; the other employees are synthetic sample data. User IDs
+are stored as text to preserve leading zeros. The SQL schema and roster data
+are in `database/schema.sql`.
+
+To create or rebuild the seeded database from the project root (replaces the
+existing database file):
 
 ```powershell
-python -c "import sqlite3; db = sqlite3.connect('database/fieldcast.db'); db.executescript(open('database/schema.sql', encoding='utf-8').read()); db.close()"
+python -c "import sqlite3; from pathlib import Path; p = Path('database/fieldcast.db'); p.unlink(missing_ok=True); db = sqlite3.connect(p); db.executescript(Path('database/schema.sql').read_text(encoding='utf-8')); db.close()"
 ```
 
 ## Project structure
 
 - `frontend/` — HTML, CSS, and browser JavaScript
 - `backend/server.py` — Python static-file server and in-memory JSON API
-- `database/schema.sql` — employee table definition and roster seed data
+- `database/schema.sql` — location and employee tables plus roster seed data
 - `database/fieldcast.db` — populated SQLite employee database
