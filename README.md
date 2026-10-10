@@ -1,29 +1,31 @@
-# Hack Midwest 2026
+# Fieldcast Admin Dashboard
 
-A starter full-stack app with a plain HTML/CSS/JavaScript frontend, an Express
-backend, and a SQLite database.
+A frontend prototype for managing employees, schedules, alerts, and work-site
+details. The Python server serves the static frontend and provides a small
+in-memory starter API; it does not use a database.
 
 ## Requirements
 
-- Node.js 20 or newer
-- npm
+- Python 3.10 or newer
 
 ## Run locally
 
-From the project root, install dependencies and start the server:
+From the project root, start the server:
 
 ```powershell
-npm install
-npm start
+python backend/server.py
 ```
 
-Open <http://localhost:3000>. The SQLite database is created automatically at
-`database/app.sqlite` the first time the server starts.
+Open <http://127.0.0.1:3000>. Set the `PORT` environment variable to use a
+different port.
+
+The dashboard’s employees, schedules, alerts, and work-site edits are sample
+frontend state and reset when the page reloads. The starter `GET /api/entries`
+and `POST /api/entries` endpoints also keep data in memory only.
 
 ## Project structure
 
-- `frontend/` — browser UI and styles
-- `backend/server.js` — Express server and JSON API
-- `database/schema.sql` — SQLite schema
-
-The API provides `GET /api/health`, `GET /api/entries`, and `POST /api/entries`.
+- `frontend/` — HTML, CSS, and browser JavaScript
+- `backend/server.py` — Python static-file server and in-memory JSON API
+- `database/schema.sql` — unused starter schema; this prototype does not connect
+  to a database

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Log in to Fieldcast with your user ID." />
+    <title>Log in | Fieldcast</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="./index.html" aria-label="Fieldcast home">
+          <span class="brand-mark" aria-hidden="true">W</span>
+          <span>Fieldcast</span>
+        </a>
+        <a class="login-button" href="./index.html">Back to dashboard</a>
+      </header>
+
+      <main class="login-content">
+        <section class="content-card login-card" aria-labelledby="login-title">
+          <p class="eyebrow">ACCOUNT ACCESS</p>
+          <h1 id="login-title">Welcome back</h1>
+          <p class="page-description">Enter your user ID to continue.</p>
+          <form class="login-form" action="#" method="get">
+            <label for="user-id">User ID</label>
+            <input
+              id="user-id"
+              name="userId"
+              type="text"
+              autocomplete="username"
+              placeholder="Enter your user ID"
+              required
+            />
+            <button class="login-submit" type="submit">Continue</button>
+          </form>
+        </section>
+      </main>
+      <footer class="app-footer"><span class="footer-dot"></span> FIELDCAST</footer>
+    </div>
+  </body>
+</html>

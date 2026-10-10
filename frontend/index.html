@@ -5,39 +5,244 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="A starter app for the Hack Midwest 2026 project."
+      content="Fieldcast administrator dashboard for employees, alerts, and work site details."
     />
-    <title>Hack Midwest 2026</title>
-    <link rel="stylesheet" href="/styles.css" />
-    <script src="/app.js" defer></script>
+    <title>Admin Dashboard | Fieldcast</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./app.js" defer></script>
   </head>
   <body>
-    <main class="page">
-      <header class="page-header">
-        <p class="eyebrow">Hack Midwest 2026</p>
-        <h1>Project entries</h1>
-        <p class="intro">A starter frontend connected to an API and SQLite database.</p>
-        <p id="connection-status" class="status" role="status">Checking connection…</p>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="./index.html" aria-label="Fieldcast admin dashboard">
+          <span class="brand-mark" aria-hidden="true">W</span>
+          <span>Fieldcast</span>
+          <span class="brand-divider" aria-hidden="true"></span>
+          <span class="brand-section">Admin</span>
+        </a>
+        <nav class="page-nav" aria-label="Admin navigation">
+          <button class="nav-button" type="button" data-page="overview" aria-current="page">Overview</button>
+          <button class="nav-button" type="button" data-page="employees">Employees</button>
+          <button class="nav-button" type="button" data-page="alerts">
+            Alerts <span class="nav-count" id="nav-alert-count">0</span>
+          </button>
+          <button class="nav-button" type="button" data-page="worksite">Work site</button>
+        </nav>
+        <a class="login-button" href="./login.html">Log in</a>
       </header>
 
-      <section class="panel" aria-labelledby="new-entry-heading">
-        <h2 id="new-entry-heading">Add an entry</h2>
-        <form id="entry-form">
-          <label for="title">Title</label>
-          <input id="title" name="title" maxlength="120" required />
+      <main class="main-content">
+        <section class="page-view" data-view="overview" aria-labelledby="overview-title">
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">ADMIN CONSOLE <span class="eyebrow-dot"></span> OVERVIEW</p>
+              <h1 id="overview-title">Dashboard</h1>
+              <p class="page-description">A clear view of your team, site, and active safety alerts.</p>
+            </div>
+            <span class="location-chip"><span aria-hidden="true">⌖</span><span id="overview-site-name">Work site not set</span></span>
+          </div>
 
-          <label for="description">Description</label>
-          <textarea id="description" name="description" maxlength="1000" rows="3"></textarea>
+          <div class="metric-grid">
+            <article class="metric-card">
+              <div class="card-label"><span class="card-icon icon-green" aria-hidden="true">◎</span> Employees</div>
+              <p class="metric-value" id="employee-count">0</p>
+              <p class="metric-note" id="active-employee-note">0 active team members</p>
+            </article>
+            <article class="metric-card">
+              <div class="card-label"><span class="card-icon icon-amber" aria-hidden="true">!</span> Open alerts</div>
+              <p class="metric-value" id="open-alert-count">0</p>
+              <p class="metric-note">Require administrator attention</p>
+            </article>
+            <article class="metric-card">
+              <div class="card-label"><span class="card-icon icon-blue" aria-hidden="true">⌖</span> Work site</div>
+              <p class="metric-value metric-value-small" id="site-city-summary">Not configured</p>
+              <p class="metric-note" id="site-address-summary">Add your work site details</p>
+            </article>
+            <article class="metric-card">
+              <div class="card-label"><span class="card-icon icon-blue" aria-hidden="true">☼</span> Weather feed</div>
+              <p class="metric-value metric-value-small">Not connected</p>
+              <p class="metric-note">Weather provider setup required</p>
+            </article>
+          </div>
 
-          <button type="submit">Save entry</button>
-          <p id="form-message" class="form-message" role="status"></p>
+          <div class="content-grid">
+            <section class="content-card" aria-labelledby="recent-alerts-title">
+              <div class="card-heading">
+                <div>
+                  <p class="eyebrow">NEEDS ATTENTION</p>
+                  <h2 id="recent-alerts-title">Recent alerts</h2>
+                </div>
+                <button class="text-button" type="button" data-open-page="alerts">View all</button>
+              </div>
+              <div id="overview-alerts" class="alert-preview-list"></div>
+            </section>
+            <section class="content-card site-summary-card" aria-labelledby="site-summary-title">
+              <div class="card-heading">
+                <div>
+                  <p class="eyebrow">SITE DETAILS</p>
+                  <h2 id="site-summary-title">Work site</h2>
+                </div>
+                <button class="text-button" type="button" data-open-page="worksite">Edit</button>
+              </div>
+              <div class="site-address-summary" id="overview-site-address"></div>
+              <dl class="site-details" id="overview-site-details"></dl>
+            </section>
+          </div>
+          <p class="prototype-note">Prototype dashboard · Sample information is stored only in this browser session.</p>
+        </section>
+
+        <section class="page-view" data-view="employees" aria-labelledby="employees-title" hidden>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">ADMIN CONSOLE <span class="eyebrow-dot"></span> TEAM</p>
+              <h1 id="employees-title">Employees</h1>
+              <p class="page-description">Manage your team directory and employee status.</p>
+            </div>
+            <button class="primary-button" id="add-employee-button" type="button">＋ Add employee</button>
+          </div>
+          <section class="content-card table-card" aria-label="Employee directory">
+            <div class="table-toolbar">
+              <label class="search-field">
+                <span class="visually-hidden">Search employees</span>
+                <span aria-hidden="true">⌕</span>
+                <input id="employee-search" type="search" placeholder="Search name, email, or role" />
+              </label>
+              <label class="filter-field">
+                <span class="visually-hidden">Filter employees by status</span>
+                <select id="employee-filter">
+                  <option value="all">All employees</option>
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+              </label>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr><th scope="col">Employee</th><th scope="col">Role</th><th scope="col">Schedule</th><th scope="col">Status</th><th scope="col">Added</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
+                </thead>
+                <tbody id="employee-rows"></tbody>
+              </table>
+            </div>
+            <p class="table-empty" id="employee-empty" hidden>No employees match your search.</p>
+          </section>
+        </section>
+
+        <section class="page-view" data-view="alerts" aria-labelledby="alerts-title" hidden>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">ADMIN CONSOLE <span class="eyebrow-dot"></span> SAFETY</p>
+              <h1 id="alerts-title">Alerts</h1>
+              <p class="page-description">Review detailed incidents and track follow-up status.</p>
+            </div>
+            <button class="primary-button" id="add-alert-button" type="button">＋ Create alert</button>
+          </div>
+          <section class="content-card table-card" aria-label="Safety alerts">
+            <div class="table-toolbar">
+              <p class="toolbar-caption"><span class="live-dot"></span> Alert activity</p>
+              <label class="filter-field">
+                <span class="visually-hidden">Filter alerts by status</span>
+                <select id="alert-filter">
+                  <option value="all">All alerts</option>
+                  <option value="Open">Open</option>
+                  <option value="Acknowledged">Acknowledged</option>
+                  <option value="Resolved">Resolved</option>
+                </select>
+              </label>
+            </div>
+            <div id="alert-list" class="alert-list"></div>
+            <p class="table-empty" id="alert-empty" hidden>No alerts match this filter.</p>
+          </section>
+        </section>
+
+        <section class="page-view" data-view="worksite" aria-labelledby="worksite-title" hidden>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">ADMIN CONSOLE <span class="eyebrow-dot"></span> CONFIGURATION</p>
+              <h1 id="worksite-title">Work site</h1>
+              <p class="page-description">Set the location used for your team’s site details and weather context.</p>
+            </div>
+          </div>
+          <form class="content-card site-form" id="worksite-form">
+            <div class="form-section-heading">
+              <span class="card-icon icon-blue" aria-hidden="true">⌖</span>
+              <div><h2>Site information</h2><p>Update the name and physical address of your work site.</p></div>
+            </div>
+            <div class="form-grid">
+              <label class="field field-wide">Work site name<input name="name" maxlength="100" placeholder="e.g. North Operations Yard" required /></label>
+              <label class="field field-wide">Street address<input name="address" maxlength="160" placeholder="Street address" /></label>
+              <label class="field">City<input name="city" maxlength="80" placeholder="City" /></label>
+              <label class="field">State / region<input name="state" maxlength="80" placeholder="State or region" /></label>
+              <label class="field">Postal code<input name="postalCode" maxlength="20" placeholder="Postal code" /></label>
+              <label class="field">Time zone<input name="timezone" maxlength="80" placeholder="e.g. America/Chicago" /></label>
+              <label class="field">Latitude<input name="latitude" type="number" min="-90" max="90" step="any" placeholder="Optional" /></label>
+              <label class="field">Longitude<input name="longitude" type="number" min="-180" max="180" step="any" placeholder="Optional" /></label>
+            </div>
+            <div class="form-actions">
+              <p class="form-feedback" id="worksite-feedback" role="status"></p>
+              <button class="primary-button" type="submit">Save site details</button>
+            </div>
+          </form>
+          <p class="prototype-note">Changes are temporary and reset when you reload this prototype.</p>
+        </section>
+      </main>
+
+      <dialog class="modal" id="employee-dialog" aria-labelledby="employee-dialog-title">
+        <form class="modal-form" id="employee-form">
+          <div class="card-heading">
+            <div><p class="eyebrow">TEAM DIRECTORY</p><h2 id="employee-dialog-title">Add employee</h2></div>
+            <button class="icon-button" type="button" data-close-dialog aria-label="Close dialog">×</button>
+          </div>
+          <label class="field">Full name<input name="name" maxlength="100" required /></label>
+          <label class="field">Email address<input name="email" type="email" maxlength="160" required /></label>
+          <label class="field">Role<input name="role" maxlength="80" placeholder="Employee" required /></label>
+          <p class="form-feedback" id="employee-feedback" role="status"></p>
+          <div class="form-actions"><button class="secondary-button" type="button" data-close-dialog>Cancel</button><button class="primary-button" type="submit">Save employee</button></div>
         </form>
-      </section>
+      </dialog>
 
-      <section class="entries-section" aria-labelledby="entries-heading">
-        <h2 id="entries-heading">Saved entries</h2>
-        <ul id="entries" class="entries" aria-live="polite"></ul>
-      </section>
-    </main>
+      <dialog class="modal" id="alert-dialog" aria-labelledby="alert-dialog-title">
+        <form class="modal-form" id="alert-form">
+          <div class="card-heading">
+            <div><p class="eyebrow">SAFETY MANAGEMENT</p><h2 id="alert-dialog-title">Create alert</h2></div>
+            <button class="icon-button" type="button" data-close-dialog aria-label="Close dialog">×</button>
+          </div>
+          <label class="field">Alert title<input name="title" maxlength="120" required /></label>
+          <label class="field">Details<textarea name="message" maxlength="1000" rows="4" required></textarea></label>
+          <label class="field">Severity<select name="severity"><option>Low</option><option selected>Medium</option><option>High</option></select></label>
+          <div class="form-actions"><button class="secondary-button" type="button" data-close-dialog>Cancel</button><button class="primary-button" type="submit">Create alert</button></div>
+        </form>
+      </dialog>
+
+      <dialog class="modal" id="schedule-dialog" aria-labelledby="schedule-dialog-title">
+        <form class="modal-form" id="schedule-form">
+          <div class="card-heading">
+            <div><p class="eyebrow">EMPLOYEE SCHEDULE</p><h2 id="schedule-dialog-title">Edit schedule</h2></div>
+            <button class="icon-button" type="button" data-close-dialog aria-label="Close dialog">×</button>
+          </div>
+          <p class="page-description" id="schedule-employee-name"></p>
+          <fieldset class="schedule-days">
+            <legend>Work days</legend>
+            <div class="day-options">
+              <label><input type="checkbox" name="days" value="Mon" /> Mon</label>
+              <label><input type="checkbox" name="days" value="Tue" /> Tue</label>
+              <label><input type="checkbox" name="days" value="Wed" /> Wed</label>
+              <label><input type="checkbox" name="days" value="Thu" /> Thu</label>
+              <label><input type="checkbox" name="days" value="Fri" /> Fri</label>
+              <label><input type="checkbox" name="days" value="Sat" /> Sat</label>
+              <label><input type="checkbox" name="days" value="Sun" /> Sun</label>
+            </div>
+          </fieldset>
+          <div class="form-grid">
+            <label class="field">Shift starts<input name="startTime" type="time" required /></label>
+            <label class="field">Shift ends<input name="endTime" type="time" required /></label>
+          </div>
+          <p class="form-feedback" id="schedule-feedback" role="status"></p>
+          <div class="form-actions"><button class="secondary-button" type="button" data-close-dialog>Cancel</button><button class="primary-button" type="submit">Save schedule</button></div>
+        </form>
+      </dialog>
+
+      <footer class="app-footer"><span class="footer-dot"></span> FIELDCAST ADMIN CONSOLE <span class="footer-divider">/</span> FRONTEND PROTOTYPE</footer>
+    </div>
   </body>
 </html>
