@@ -29,7 +29,8 @@ PROJECT_DIRECTORY = Path(__file__).resolve().parent.parent
 FRONTEND_DIRECTORY = PROJECT_DIRECTORY / "frontend"
 DATABASE_PATH = PROJECT_DIRECTORY / "database" / "fieldcast.db"
 DB_PATH = Path(os.environ.get("DB_PATH", PROJECT_DIRECTORY / "closure_call.db"))
-HOST = os.environ.get("HOST", "127.0.0.1")
+ROSTER_SCHEMA_PATH = PROJECT_DIRECTORY / "database" / "schema.sql"
+HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "3000"))
 MAX_REQUEST_BYTES = 16_384
 
@@ -67,7 +68,9 @@ def get_db():
 
 
 def init_db():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with get_db() as conn:
+        conn.executescript(ROSTER_SCHEMA_PATH.read_text(encoding="utf-8"))
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS entries (

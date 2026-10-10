@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: fieldcast
+    runtime: python
+    plan: starter
+    buildCommand: python -m compileall backend
+    startCommand: python backend/server.py
+    healthCheckPath: /api/health
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: DB_PATH
+        value: /var/data/closure_call.db
+    disk:
+      name: fieldcast-data
+      mountPath: /var/data
+      sizeGB: 1
