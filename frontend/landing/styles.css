@@ -528,16 +528,47 @@ h3 { font-size: 1.15rem; font-weight: 500; letter-spacing: -0.01em; }
 .section-head { margin-bottom: clamp(2.5rem, 5vw, 4rem); }
 .section-lede { max-width: 38rem; margin-top: 1.4rem; color: var(--muted); font-size: 1.05rem; }
 
-.problem h2 { max-width: 30ch; font-size: clamp(1.8rem, 3.6vw, 3rem); }
+/* problem — light stats band (Golf Nation style) */
+.problem { background: #f3efec; color: #222; }
+.problem .eyebrow { color: #5c5c5c; background: rgb(0 0 0 / 4%); box-shadow: inset 0 0 0 1px rgb(0 0 0 / 12%); }
+.problem h2 { max-width: 30ch; font-size: clamp(1.8rem, 3.6vw, 3rem); color: #222; }
+.problem h2 em { color: rgb(27 81 45); }
 .problem-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 1.25rem;
-  margin-top: clamp(3rem, 6vw, 4.5rem);
+  gap: 1.5rem;
+  margin-top: clamp(4rem, 9vw, 7rem);
 }
-.problem-grid .num { color: var(--green); font-size: 0.8rem; margin-bottom: 2.5rem; }
-.problem-grid h3 { margin-bottom: 0.6rem; }
-.problem-grid p:last-child, .flow p { color: var(--muted); font-size: 0.95rem; }
+.problem-item h3 {
+  margin-top: 2.75rem;
+  font-family: "Inter", var(--sans);
+  font-size: clamp(1.3rem, 1.8vw, 1.65rem);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: #909090;
+}
+.problem-item p:last-child { max-width: 26rem; margin-top: 0.75rem; font-size: 0.98rem; color: #5c5c5c; }
+.problem-line { height: 3px; margin-top: clamp(2.5rem, 5vw, 3.5rem); background: #cbcbcb; }
+
+/* odometer: one rolling column per digit, settles when the item is revealed */
+.odo {
+  display: flex;
+  height: 1em;
+  overflow: hidden;
+  font-family: "Inter", var(--sans);
+  font-size: clamp(4rem, 7vw, 6.5rem);
+  font-weight: 600;
+  letter-spacing: -0.06em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: #222;
+}
+.odo-col { display: flex; flex-direction: column; transition: transform 2s cubic-bezier(0.16, 1, 0.3, 1) var(--delay, 0s); }
+.odo-col span { height: 1em; }
+.is-visible .odo-col { transform: translateY(calc(var(--n) * -1em)); }
+
+.flow p { color: var(--muted); font-size: 0.95rem; }
 
 /* flow — asymmetric bento */
 .flow {
@@ -827,7 +858,8 @@ h3 { font-size: 1.15rem; font-weight: 500; letter-spacing: -0.01em; }
   .hero-front { height: 78%; }
   .hero-copy { gap: 1.1rem; }
   .hero-stats { flex-wrap: wrap; }
-  .problem-grid { grid-template-columns: 1fr; }
+  .problem-grid { grid-template-columns: 1fr; row-gap: 3.5rem; }
+  .problem-item h3 { margin-top: 1.5rem; }
   .flow { grid-template-columns: 1fr; }
   .flow > li:nth-child(n) { grid-column: auto; }
   .posture-scale { grid-template-columns: 1fr; }

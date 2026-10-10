@@ -142,6 +142,17 @@ function selectPosture(key) {
 tabs.forEach((tab) => tab.addEventListener("click", () => selectPosture(tab.dataset.posture)));
 selectPosture("telework");
 
+// ---------- odometer numbers (rolled into place by the reveal below) ----------
+
+document.querySelectorAll(".odo").forEach((el) => {
+  el.setAttribute("aria-label", el.dataset.value);
+  el.innerHTML = [...el.dataset.value]
+    .map((digit, i) => `<span class="odo-col" aria-hidden="true" style="--n: ${digit}; --delay: ${0.2 + i * 0.12}s">${
+      "0123456789".split("").map((d) => `<span>${d}</span>`).join("")
+    }</span>`)
+    .join("");
+});
+
 // ---------- scroll reveal ----------
 
 const observer = new IntersectionObserver(

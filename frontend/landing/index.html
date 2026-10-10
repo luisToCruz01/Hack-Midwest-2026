@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Petrona:ital,wght@0,600;1,600&family=Poppins:wght@400&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Petrona:ital,wght@0,600;1,600&family=Poppins:wght@400&family=Inter:wght@400;600&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./styles.css" />
@@ -71,12 +71,7 @@
           <div class="hero-front">
             <img src="./assets/hero-fg.webp" alt="" class="hero-img" aria-hidden="true" />
             <div class="hero-copy">
-              <p class="eyebrow hero-in"><span class="dot dot-live"></span> Built for USDA facilities</p>
-              <h1 class="hero-in" style="--d: 80ms">
-                Close the right buildings. Tell the right people.
-                <em>Before they leave home.</em>
-              </h1>
-              <p class="lede hero-in" style="--d: 160ms">
+              <p class="lede hero-in" style="--d: 80ms">
                 Fieldcast reads live National Weather Service alerts alongside road, school and
                 air-quality signals, scores the threat against each facility, and hands the manager
                 a graded recommendation with every reason attached. One approval, and every
@@ -150,31 +145,26 @@
             <em>And a decision due before sunrise.</em>
           </h2>
           <div class="problem-grid">
-            <article class="bezel reveal">
-              <div class="bezel-core">
-                <p class="mono num">01</p>
-                <h3>Scattered inputs</h3>
-                <p>Facility managers piece the call together from forecasts, road maps and school
-                  announcements, under time pressure, often alone.</p>
-              </div>
+            <article class="problem-item reveal">
+              <p class="odo" data-value="01">01</p>
+              <h3>Scattered inputs</h3>
+              <p>Facility managers piece the call together from forecasts, road maps and school
+                announcements, under time pressure, often alone.</p>
             </article>
-            <article class="bezel reveal" style="--d: 80ms">
-              <div class="bezel-core">
-                <p class="mono num">02</p>
-                <h3>Wrong recipients, late</h3>
-                <p>Who is assigned here? Who is on detail elsewhere this week? Who is already
-                  teleworking? The message lands after people are on the road.</p>
-              </div>
+            <article class="problem-item reveal" style="--d: 80ms">
+              <p class="odo" data-value="02">02</p>
+              <h3>Wrong recipients, late</h3>
+              <p>Who is assigned here? Who is on detail elsewhere this week? Who is already
+                teleworking? The message lands after people are on the road.</p>
             </article>
-            <article class="bezel reveal" style="--d: 160ms">
-              <div class="bezel-core">
-                <p class="mono num">03</p>
-                <h3>No record of why</h3>
-                <p>Two managers facing identical conditions decide differently, and when a closure
-                  that should have happened didn’t, nobody can reconstruct what was known.</p>
-              </div>
+            <article class="problem-item reveal" style="--d: 160ms">
+              <p class="odo" data-value="03">03</p>
+              <h3>No record of why</h3>
+              <p>Two managers facing identical conditions decide differently, and when a closure
+                that should have happened didn’t, nobody can reconstruct what was known.</p>
             </article>
           </div>
+          <div class="problem-line" aria-hidden="true"></div>
         </div>
       </section>
 
