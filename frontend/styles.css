@@ -422,6 +422,15 @@ h2 {
   border-bottom: 1px solid rgb(145 170 167 / 11%);
 }
 
+.overview-location-picker {
+  display: block;
+  margin-top: 1rem;
+}
+
+.overview-location-picker select {
+  width: 100%;
+}
+
 .site-address-summary strong {
   color: #e6f0ec;
   font-size: 0.88rem;
@@ -619,6 +628,16 @@ tbody tr:last-child td {
 .employee-id {
   display: block;
   margin-top: 0.2rem;
+  color: #819d99;
+  font-size: 0.7rem;
+}
+
+.employee-location span {
+  display: block;
+}
+
+.employee-location span + span {
+  margin-top: 0.25rem;
   color: #819d99;
   font-size: 0.7rem;
 }

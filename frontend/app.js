@@ -4,10 +4,13 @@ const employeeRows = document.querySelector("#employee-rows");
 const employeeSearch = document.querySelector("#employee-search");
 const employeeFilter = document.querySelector("#employee-filter");
 const employeeLocationFilter = document.querySelector("#employee-location-filter");
+const overviewLocationSelect = document.querySelector("#overview-location-select");
 const alertDialog = document.querySelector("#alert-dialog");
 const alertForm = document.querySelector("#alert-form");
 
 let employees = [];
+let locations = [];
+let selectedLocationId = "";
 let employeesLoading = true;
 let employeeLoadError = "";
 
@@ -74,7 +77,9 @@ function mapDatabaseEmployee(employee) {
   return {
     id: employee.userId,
     name: employee.fullName,
-    location: employee.location,
+    locationId: String(employee.locationId),
+    locationName: employee.locationName,
+    locationAddress: employee.locationAddress,
     schedule: {
       days: expandDaysOfWeek(employee.daysOfWeek),
       startTime: employee.shiftStart,
@@ -144,32 +149,30 @@ function setPage(selectedPage) {
 function renderOverview() {
   const workingEmployees = employees.filter((employee) => getEmployeeStatus(employee) === "Working").length;
   const openAlerts = alerts.filter((alert) => alert.status !== "Resolved").length;
-  const addressParts = [workSite.city, workSite.state, workSite.postalCode].filter(Boolean);
-  const streetAddress = workSite.address || "Address not set";
-  const fullAddress = [streetAddress, addressParts.join(" ")].filter(Boolean).join("\n");
+  const selectedLocation = locations.find((location) => location.id === selectedLocationId);
+  const siteName = selectedLocation?.name || workSite.name || "Work site not set";
+  const siteAddress = selectedLocation?.address || workSite.address || "Address not set";
 
   document.querySelector("#employee-count").textContent = String(employees.length);
   document.querySelector("#active-employee-note").textContent = `${workingEmployees} working now · ${employees.length - workingEmployees} off shift`;
   document.querySelector("#open-alert-count").textContent = String(openAlerts);
   document.querySelector("#nav-alert-count").textContent = String(openAlerts);
-  document.querySelector("#overview-site-name").textContent = workSite.name || "Work site not set";
-  document.querySelector("#site-city-summary").textContent = workSite.name || "Work site not set";
-  document.querySelector("#site-address-summary").textContent = fullAddress;
+  document.querySelector("#overview-site-name").textContent = siteName;
+  document.querySelector("#site-city-summary").textContent = siteName;
+  document.querySelector("#site-address-summary").textContent = siteAddress;
+  overviewLocationSelect.value = selectedLocationId;
 
   const siteAddressSummary = document.querySelector("#overview-site-address");
   siteAddressSummary.replaceChildren();
-  const siteName = document.createElement("strong");
-  const siteAddress = document.createElement("p");
-  siteName.textContent = workSite.name || "Work site not set";
-  siteAddress.textContent = [
-    workSite.address,
-    [workSite.city, workSite.state, workSite.postalCode].filter(Boolean).join(" "),
-  ].filter(Boolean).join("\n") || "Address not set";
-  siteAddressSummary.append(siteName, siteAddress);
+  const selectedSiteName = document.createElement("strong");
+  const selectedSiteAddress = document.createElement("p");
+  selectedSiteName.textContent = siteName;
+  selectedSiteAddress.textContent = siteAddress;
+  siteAddressSummary.append(selectedSiteName, selectedSiteAddress);
 
   const siteDetails = document.querySelector("#overview-site-details");
   siteDetails.replaceChildren();
-  const details = [
+  const details = selectedLocation ? [] : [
     ["Time zone", workSite.timezone || "Not set"],
     ["Coordinates", workSite.latitude && workSite.longitude ? `${workSite.latitude}, ${workSite.longitude}` : "Not set"],
   ];
@@ -224,7 +227,7 @@ function renderEmployees() {
     const matchesSearch = [employee.name, employee.id, employeeStatus]
       .some((value) => value.toLowerCase().includes(search));
     const matchesStatus = selectedStatus === "all" || employeeStatus === selectedStatus;
-    const matchesLocation = selectedLocation === "all" || employee.location === selectedLocation;
+    const matchesLocation = selectedLocation === "all" || employee.locationId === selectedLocation;
     return matchesSearch && matchesStatus && matchesLocation;
   });
 
@@ -247,6 +250,8 @@ function renderEmployees() {
     const status = document.createElement("td");
     const statusPill = document.createElement("span");
     const location = document.createElement("td");
+    const locationName = document.createElement("span");
+    const locationAddress = document.createElement("span");
 
     person.className = "employee-cell";
     avatar.className = "avatar";
@@ -265,7 +270,10 @@ function renderEmployees() {
     statusPill.className = `status-pill status-${escapeClassName(currentStatus)}`;
     statusPill.textContent = currentStatus;
     status.append(statusPill);
-    location.textContent = "";
+    location.className = "employee-location";
+    locationName.textContent = employee.locationName;
+    locationAddress.textContent = employee.locationAddress;
+    location.append(locationName, locationAddress);
     row.append(personCell, schedule, status, location);
     employeeRows.append(row);
   }
@@ -273,9 +281,6 @@ function renderEmployees() {
 
 function renderEmployeeLocationFilter() {
   const selectedLocation = employeeLocationFilter.value;
-  const locations = [...new Set(employees.map((employee) => employee.location))]
-    .filter(Boolean)
-    .sort((left, right) => left.localeCompare(right));
   const allLocations = document.createElement("option");
   allLocations.value = "all";
   allLocations.textContent = "All locations";
@@ -283,12 +288,27 @@ function renderEmployeeLocationFilter() {
 
   for (const location of locations) {
     const option = document.createElement("option");
-    option.value = location;
-    option.textContent = location;
+    option.value = location.id;
+    option.textContent = location.name;
     employeeLocationFilter.append(option);
   }
 
-  employeeLocationFilter.value = locations.includes(selectedLocation) ? selectedLocation : "all";
+  employeeLocationFilter.value = locations.some((location) => location.id === selectedLocation) ? selectedLocation : "all";
+}
+
+function renderOverviewLocationOptions() {
+  const options = locations.map((location) => {
+    const option = document.createElement("option");
+    option.value = location.id;
+    option.textContent = [location.name, location.address].filter(Boolean).join(" — ");
+    return option;
+  });
+  overviewLocationSelect.replaceChildren(...options);
+  overviewLocationSelect.disabled = options.length === 0;
+  if (!locations.some((location) => location.id === selectedLocationId)) {
+    selectedLocationId = locations[0]?.id || "";
+  }
+  overviewLocationSelect.value = selectedLocationId;
 }
 
 function renderAlerts() {
@@ -382,6 +402,10 @@ document.querySelectorAll("[data-close-dialog]").forEach((button) => {
 employeeSearch.addEventListener("input", renderEmployees);
 employeeFilter.addEventListener("change", renderEmployees);
 employeeLocationFilter.addEventListener("change", renderEmployees);
+overviewLocationSelect.addEventListener("change", () => {
+  selectedLocationId = overviewLocationSelect.value;
+  renderOverview();
+});
 document.querySelector("#alert-filter").addEventListener("change", renderAlerts);
 
 document.querySelector("#alert-list").addEventListener("click", (event) => {
@@ -461,12 +485,25 @@ async function loadEmployees() {
     if (!Array.isArray(records)) throw new Error("Employee API response must be an array.");
 
     employees = records.map(mapDatabaseEmployee);
+    locations = [...new Map(employees.map((employee) => [
+      employee.locationId,
+      {
+        id: employee.locationId,
+        name: employee.locationName,
+        address: employee.locationAddress,
+      },
+    ])).values()].sort((left, right) => left.name.localeCompare(right.name));
     employeesLoading = false;
+    renderOverviewLocationOptions();
     renderEmployeeLocationFilter();
     renderAll();
   } catch (error) {
     employeesLoading = false;
     employeeLoadError = "Unable to load employees from the database. Check that the dashboard server and database are available.";
+    const unavailableOption = document.createElement("option");
+    unavailableOption.value = "";
+    unavailableOption.textContent = "Unable to load locations";
+    overviewLocationSelect.replaceChildren(unavailableOption);
     console.error("Failed to load employees from the database.", error);
     renderAll();
   }

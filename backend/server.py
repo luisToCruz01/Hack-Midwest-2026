@@ -70,6 +70,13 @@ def get_db():
 def init_db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with get_db() as conn:
+        location_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(locations)")
+        }
+        if location_columns and "address" not in location_columns:
+            conn.execute(
+                "ALTER TABLE locations ADD COLUMN address TEXT NOT NULL DEFAULT ''"
+            )
         conn.executescript(ROSTER_SCHEMA_PATH.read_text(encoding="utf-8"))
         conn.executescript(
             """
@@ -181,10 +188,10 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
                 with sqlite3.connect(database_uri, uri=True) as database:
                     employees = database.execute(
                         """
-                        SELECT employees.user_id, employees.full_name, employees.shift_start,
-                               employees.shift_end, employees.days_of_week, locations.name
-                        FROM employees
-                        JOIN locations ON locations.location_id = employees.location_id
+                        SELECT e.user_id, e.full_name, e.shift_start, e.shift_end,
+                               e.days_of_week, l.location_id, l.name, l.address
+                        FROM employees AS e
+                        JOIN locations AS l ON l.location_id = e.location_id
                         ORDER BY full_name COLLATE NOCASE
                         """
                     ).fetchall()
@@ -200,9 +207,14 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
                     "shiftStart": shift_start,
                     "shiftEnd": shift_end,
                     "daysOfWeek": days_of_week,
-                    "location": location,
+                    "locationId": location_id,
+                    "locationName": location_name,
+                    "locationAddress": location_address,
                 }
-                for user_id, full_name, shift_start, shift_end, days_of_week, location in employees
+                for (
+                    user_id, full_name, shift_start, shift_end, days_of_week,
+                    location_id, location_name, location_address,
+                ) in employees
             ])
             return
 
