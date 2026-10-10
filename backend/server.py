@@ -8,6 +8,8 @@ Routes
   GET  /api/alerts?lat=..&lon=..  fetches live NWS alerts, saves a snapshot
   GET  /api/snapshots             recent snapshot metadata
   GET  /api/snapshots/<id>        full snapshot including the raw NWS payload
+  GET  /api/locations             all work-site locations from the roster database
+  GET  /api/weather?locationId=.. geocodes a location and returns live NWS conditions
   GET  /api/entries
   POST /api/entries               needs "Authorization: Bearer <token>"
 """
@@ -15,6 +17,7 @@ import json
 import os
 import secrets
 import sqlite3
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -36,6 +39,8 @@ MAX_REQUEST_BYTES = 16_384
 
 # NWS asks every client to identify itself. Change the email.
 NWS_ALERTS_URL = "https://api.weather.gov/alerts/active"
+NWS_POINTS_URL = "https://api.weather.gov/points"
+GEOCODER_URL = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
 NWS_HEADERS = {
     "User-Agent": os.environ.get("NWS_USER_AGENT", "ClosureCall/0.1 (your-email@example.com)"),
     "Accept": "application/geo+json",
@@ -48,6 +53,10 @@ DEMO_EMPLOYEES = {
 }
 sessions: dict[str, str] = {}  # token -> employee_id
 sessions_lock = Lock()
+geocode_cache: dict[int, dict] = {}
+geocode_cache_lock = Lock()
+nominatim_lock = Lock()
+last_nominatim_request = 0.0
 
 
 # ---------- helpers ----------
@@ -110,11 +119,93 @@ def fetch_nws_alerts(lat, lon):
     try:
         with urlopen(Request(url, headers=NWS_HEADERS), timeout=10) as resp:
             raw = json.loads(resp.read().decode("utf-8"))
+        if not isinstance(raw, dict) or not isinstance(raw.get("features", []), list):
+            raise ValueError("NWS alerts returned an invalid response.")
         return {"source": "nws_alerts", "ok": True, "fetched_at": fetched_at,
                 "error": None, "raw": raw}
     except (URLError, TimeoutError, json.JSONDecodeError, ValueError) as err:
         return {"source": "nws_alerts", "ok": False, "fetched_at": fetched_at,
                 "error": str(err), "raw": None}
+
+
+def fetch_json(url, headers):
+    try:
+        with urlopen(Request(url, headers=headers), timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except (URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise RuntimeError(f"Unable to fetch live weather data: {error}") from error
+    if not isinstance(data, (dict, list)):
+        raise RuntimeError("Weather service returned an invalid response.")
+    return data
+
+
+def geocode_location(address, location_id):
+    global last_nominatim_request
+
+    with geocode_cache_lock:
+        cached = geocode_cache.get(location_id)
+    if cached:
+        return cached
+
+    census_url = (
+        f"{GEOCODER_URL}?{urlencode({'address': address, 'benchmark': 'Public_AR_Current', 'format': 'json'})}"
+    )
+    census_data = fetch_json(census_url, {"User-Agent": NWS_HEADERS["User-Agent"]})
+    census_result = census_data.get("result")
+    if not isinstance(census_result, dict):
+        raise ValueError("Census Geocoder returned an invalid result.")
+    matches = census_result.get("addressMatches", [])
+    if matches:
+        match = matches[0]
+        if not isinstance(match, dict) or not isinstance(match.get("coordinates"), dict):
+            raise ValueError("Census Geocoder returned invalid coordinates.")
+        coordinates = match["coordinates"]
+        result = {
+            "latitude": float(coordinates["y"]),
+            "longitude": float(coordinates["x"]),
+            "matchedAddress": match.get("matchedAddress", address),
+            "precision": "address",
+        }
+    else:
+        address_parts = [part.strip() for part in address.split(",")]
+        if len(address_parts) < 2 or not address_parts[1]:
+            raise LookupError("The selected address could not be geocoded.")
+        locality = ", ".join(address_parts[1:])
+        params = urlencode({
+            "q": locality,
+            "format": "jsonv2",
+            "limit": 1,
+            "countrycodes": "us",
+        })
+        with nominatim_lock:
+            wait_seconds = 1.0 - (time.monotonic() - last_nominatim_request)
+            if wait_seconds > 0:
+                time.sleep(wait_seconds)
+            nominatim_data = fetch_json(
+                f"https://nominatim.openstreetmap.org/search?{params}",
+                {"User-Agent": "FieldcastAdminDashboard/1.0", "Accept": "application/json"},
+            )
+            last_nominatim_request = time.monotonic()
+
+        if not isinstance(nominatim_data, list) or not nominatim_data:
+            raise LookupError("The selected address and its locality could not be geocoded.")
+        locality_match = nominatim_data[0]
+        if not isinstance(locality_match, dict):
+            raise ValueError("OpenStreetMap Nominatim returned an invalid result.")
+        result = {
+            "latitude": float(locality_match["lat"]),
+            "longitude": float(locality_match["lon"]),
+            "matchedAddress": locality_match.get("display_name", locality),
+            "precision": "locality",
+        }
+
+    if not (-90 <= result["latitude"] <= 90 and -180 <= result["longitude"] <= 180):
+        raise ValueError("Geocoder returned coordinates outside valid ranges.")
+    result["latitude"] = round(result["latitude"], 4)
+    result["longitude"] = round(result["longitude"], 4)
+    with geocode_cache_lock:
+        geocode_cache[location_id] = result
+    return result
 
 
 def summarize_alerts(raw):
@@ -180,6 +271,32 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
 
         if route.startswith("/api/snapshots/"):
             self.handle_snapshot_detail(route.rsplit("/", 1)[-1])
+            return
+
+        if route == "/api/locations":
+            try:
+                database_uri = f"{DATABASE_PATH.as_uri()}?mode=ro"
+                with sqlite3.connect(database_uri, uri=True) as database:
+                    locations = database.execute(
+                        """
+                        SELECT location_id, name, address
+                        FROM locations
+                        ORDER BY name COLLATE NOCASE
+                        """
+                    ).fetchall()
+            except sqlite3.Error as error:
+                self.log_error("Unable to read location database: %s", error)
+                self.send_json({"error": "Unable to load locations from the database."}, status=500)
+                return
+
+            self.send_json([
+                {"locationId": location_id, "name": name, "address": address}
+                for location_id, name, address in locations
+            ])
+            return
+
+        if route == "/api/weather":
+            self.handle_weather(parse_qs(parts.query))
             return
 
         if route == "/api/employees":
@@ -256,6 +373,111 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
             "error": snapshot["error"],
             "alerts": summarize_alerts(snapshot["raw"]),
         })
+
+    def handle_weather(self, query):
+        raw_location_id = query.get("locationId", [""])[0]
+        if not raw_location_id.isdigit() or len(raw_location_id) > 3:
+            self.send_json({"error": "locationId must be a number."}, status=400)
+            return
+
+        try:
+            database_uri = f"{DATABASE_PATH.as_uri()}?mode=ro"
+            with sqlite3.connect(database_uri, uri=True) as database:
+                location = database.execute(
+                    "SELECT location_id, name, address FROM locations WHERE location_id = ?",
+                    (int(raw_location_id),),
+                ).fetchone()
+        except sqlite3.Error as error:
+            self.log_error("Unable to read location database: %s", error)
+            self.send_json({"error": "Unable to load the selected work site."}, status=500)
+            return
+
+        if location is None:
+            self.send_json({"error": "Selected work site was not found."}, status=404)
+            return
+        location_id, name, address = location
+
+        try:
+            geocoded = geocode_location(address, location_id)
+            latitude = geocoded["latitude"]
+            longitude = geocoded["longitude"]
+
+            point_data = fetch_json(
+                f"{NWS_POINTS_URL}/{latitude},{longitude}",
+                NWS_HEADERS,
+            )
+            point_properties = point_data.get("properties")
+            if not isinstance(point_properties, dict):
+                raise ValueError("NWS point response is missing its properties.")
+            hourly_url = point_properties.get("forecastHourly")
+            if not isinstance(hourly_url, str):
+                raise ValueError("NWS point response is missing its hourly forecast URL.")
+            forecast_data = fetch_json(hourly_url, NWS_HEADERS)
+            forecast_properties = forecast_data.get("properties")
+            if not isinstance(forecast_properties, dict):
+                raise ValueError("NWS forecast response is missing its properties.")
+            periods = forecast_properties.get("periods", [])
+            if not isinstance(periods, list) or not periods:
+                raise ValueError("NWS did not return an hourly forecast for this location.")
+            period = periods[0]
+            if not isinstance(period, dict):
+                raise ValueError("NWS returned an invalid hourly forecast period.")
+
+            alert_snapshot = fetch_nws_alerts(latitude, longitude)
+            snapshot_id = save_snapshot(alert_snapshot, latitude, longitude)
+            alert_features = []
+            alerts_error = None
+            if alert_snapshot["ok"]:
+                for feature in alert_snapshot["raw"].get("features", []):
+                    if not isinstance(feature, dict):
+                        continue
+                    properties = feature.get("properties", {})
+                    if not isinstance(properties, dict):
+                        continue
+                    alert_features.append({
+                        "event": properties.get("event"),
+                        "severity": properties.get("severity"),
+                        "headline": properties.get("headline"),
+                        "effective": properties.get("effective"),
+                        "expires": properties.get("expires"),
+                        "geometry": feature.get("geometry"),
+                    })
+            else:
+                alerts_error = "Active NWS alerts are temporarily unavailable."
+
+            precipitation = period.get("probabilityOfPrecipitation") or {}
+            humidity = period.get("relativeHumidity") or {}
+            if not isinstance(precipitation, dict) or not isinstance(humidity, dict):
+                raise ValueError("NWS returned invalid hourly forecast measurements.")
+            self.send_json({
+                "location": {
+                    "id": location_id,
+                    "name": name,
+                    "address": address,
+                    "matchedAddress": geocoded["matchedAddress"],
+                    "geocodePrecision": geocoded["precision"],
+                },
+                "coordinates": {"latitude": latitude, "longitude": longitude},
+                "forecast": {
+                    "startTime": period.get("startTime"),
+                    "temperature": period.get("temperature"),
+                    "temperatureUnit": period.get("temperatureUnit"),
+                    "windSpeed": period.get("windSpeed"),
+                    "windDirection": period.get("windDirection"),
+                    "probabilityOfPrecipitation": precipitation.get("value"),
+                    "relativeHumidity": humidity.get("value"),
+                    "shortForecast": period.get("shortForecast"),
+                },
+                "alerts": alert_features,
+                "alertsError": alerts_error,
+                "snapshotId": snapshot_id,
+                "updatedAt": now_iso(),
+            })
+        except LookupError as error:
+            self.send_json({"error": str(error)}, status=422)
+        except (RuntimeError, ValueError, TypeError, KeyError) as error:
+            self.log_error("Unable to load NWS weather for location %s: %s", location_id, error)
+            self.send_json({"error": "Unable to load live weather for the selected work site."}, status=502)
 
     def handle_snapshot_detail(self, raw_id):
         if not raw_id.isdigit():

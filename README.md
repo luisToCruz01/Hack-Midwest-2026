@@ -39,6 +39,17 @@ edits are sample frontend state and reset when the page reloads. The mobile
 server exposes `GET /api/health` and `GET /api/employees`; the main server also
 provides login, weather-alert snapshots, and SQLite-backed field reports.
 
+The overview map centers on the selected work-site address, adds its hourly
+NWS temperature, wind direction and speed, precipitation probability, and
+humidity, and draws active NWS alert polygons when available. Coordinates are
+resolved from the roster address with the U.S. Census Geocoder; map tiles are
+provided by OpenStreetMap. The interactive map uses Leaflet from its public
+CDN, so the dashboard needs an internet connection to load map assets and
+weather data. Conditions reload when the selected site changes and every ten
+minutes while the dashboard is open. If Census cannot locate a street address,
+the map falls back to its city/locality from OpenStreetMap Nominatim and labels
+the weather location as approximate.
+
 ## Employee database
 
 `database/fieldcast.db` is a SQLite database seeded with the 200 supplied

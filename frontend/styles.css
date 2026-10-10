@@ -330,6 +330,151 @@ h2 {
   padding: 1.35rem;
 }
 
+.overview-map-card {
+  margin-top: 1rem;
+}
+
+.overview-map-frame {
+  height: 460px;
+  margin-top: 1rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #081e27;
+}
+
+#weather-map {
+  width: 100%;
+  height: 100%;
+  background: #081e27;
+}
+
+.weather-map-location {
+  margin: 0.8rem 0 0;
+  color: #c2d9e9;
+  font-size: 0.8rem;
+}
+
+.weather-map-status {
+  margin: 0.55rem 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.weather-map-status-error {
+  color: #ffaaa7;
+}
+
+.weather-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.weather-metric {
+  display: grid;
+  min-height: 66px;
+  align-content: center;
+  gap: 0.3rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgb(145 170 167 / 16%);
+  border-radius: 8px;
+  background: rgb(8 30 39 / 75%);
+}
+
+.weather-metric > span {
+  color: var(--muted);
+  font-size: 0.67rem;
+}
+
+.weather-metric > strong {
+  color: #e8f0ed;
+  font-size: 0.84rem;
+}
+
+.weather-metric-rain > strong {
+  color: #8bd5ff;
+}
+
+.weather-map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem 1.2rem;
+  margin-top: 0.75rem;
+  color: var(--muted);
+  font-size: 0.69rem;
+}
+
+.weather-map-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.weather-map-legend i {
+  display: inline-block;
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+}
+
+.legend-site {
+  background: #42b6ff;
+}
+
+.legend-alert {
+  border: 2px solid #ef5961;
+  background: rgb(239 89 97 / 25%);
+}
+
+.weather-map-marker-wrap {
+  border: 0;
+  background: transparent;
+}
+
+.weather-map-marker {
+  display: flex;
+  width: 110px;
+  height: 54px;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border: 2px solid #dff5ff;
+  border-radius: 30px;
+  color: #fff;
+  background: #075b87;
+  box-shadow: 0 2px 12px rgb(0 0 0 / 45%);
+}
+
+.weather-map-wind-arrow {
+  color: #fff;
+  font-size: 1.55rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.weather-map-rain {
+  color: #c8efff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.weather-popup {
+  display: grid;
+  gap: 0.25rem;
+  color: #17252b;
+}
+
+.weather-popup p {
+  margin: 0;
+}
+
+.weather-popup > span {
+  font-size: 0.75rem;
+}
+
 .card-heading {
   display: flex;
   align-items: center;
