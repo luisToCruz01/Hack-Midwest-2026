@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Fieldcast turns live National Weather Service data into graded, defensible facility closure recommendations for USDA managers, and gets the decision to the right employees before they leave home."
+    />
+    <title>Fieldcast | Weather-driven facility decisions</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+
+    <!-- Floating island nav -->
+    <header class="nav-wrap">
+      <nav class="nav" aria-label="Primary">
+        <a class="brand" href="#top" aria-label="Fieldcast home">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+              <circle cx="12" cy="12" r="3.2" />
+              <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" />
+            </svg>
+          </span>
+          <span>Fieldcast</span>
+        </a>
+        <ul class="nav-links">
+          <li><a href="#how">How it works</a></li>
+          <li><a href="#postures">Postures</a></li>
+          <li><a href="#notify">Notification</a></li>
+          <li><a href="#log">Decision log</a></li>
+          <li><a href="#thresholds">Thresholds</a></li>
+        </ul>
+        <a class="btn btn-small" href="../login.html">
+          <span>Log in</span>
+          <span class="btn-icon" aria-hidden="true">↗</span>
+        </a>
+        <button class="burger" type="button" aria-expanded="false" aria-controls="menu" aria-label="Open menu">
+          <span></span><span></span>
+        </button>
+      </nav>
+    </header>
+
+    <div class="menu" id="menu" hidden>
+      <ul>
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#postures">Postures</a></li>
+        <li><a href="#notify">Notification</a></li>
+        <li><a href="#log">Decision log</a></li>
+        <li><a href="#thresholds">Thresholds</a></li>
+        <li><a href="../login.html">Log in ↗</a></li>
+      </ul>
+    </div>
+
+    <main id="top">
+      <!-- HERO -->
+      <section class="hero">
+        <div class="glow glow-a" aria-hidden="true"></div>
+        <div class="glow glow-b" aria-hidden="true"></div>
+
+        <div class="container hero-grid">
+          <div class="hero-copy reveal">
+            <p class="eyebrow"><span class="dot dot-live"></span> Built for USDA facilities</p>
+            <h1>
+              Close the right buildings. Tell the right people.<br />
+              <em>Before they leave home.</em>
+            </h1>
+            <p class="lede">
+              Fieldcast reads live National Weather Service alerts alongside road, school and
+              air-quality signals, scores the threat against each facility, and hands the manager
+              a graded recommendation with every reason attached. One approval, and every
+              affected employee hears about it on the right channel.
+            </p>
+            <div class="hero-actions">
+              <a class="btn btn-primary" href="../login.html">
+                <span>Open dashboard</span>
+                <span class="btn-icon" aria-hidden="true">↗</span>
+              </a>
+              <a class="btn btn-ghost" href="#how">See how it works</a>
+            </div>
+            <dl class="hero-stats">
+              <div><dt>5</dt><dd>graded postures, not a yes/no</dd></div>
+              <div><dt>1</dt><dd>place for every input, timestamped</dd></div>
+              <div><dt>0</dt><dd>decisions made without a human</dd></div>
+            </dl>
+          </div>
+
+          <!-- Live NWS panel -->
+          <div class="bezel hero-panel reveal" style="--d: 120ms">
+            <div class="bezel-core live">
+              <div class="live-head">
+                <p class="mono label"><span class="dot dot-live"></span> Live · National Weather Service</p>
+                <p class="mono muted" id="live-updated">Connecting…</p>
+              </div>
+              <div class="live-stats">
+                <div>
+                  <p class="live-num" id="stat-total">—</p>
+                  <p class="muted small">active land alerts</p>
+                </div>
+                <div>
+                  <p class="live-num" id="stat-severe">—</p>
+                  <p class="muted small">severe or extreme</p>
+                </div>
+                <div>
+                  <p class="live-num" id="stat-states">—</p>
+                  <p class="muted small">states & territories</p>
+                </div>
+              </div>
+              <ol class="live-list" id="live-list" aria-live="polite">
+                <li class="live-skeleton"></li>
+                <li class="live-skeleton"></li>
+                <li class="live-skeleton"></li>
+                <li class="live-skeleton"></li>
+              </ol>
+              <p class="mono tiny muted live-source">
+                Source: <a href="https://api.weather.gov" target="_blank" rel="noopener">api.weather.gov</a>
+                · real alerts, not a simulation
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="ticker" aria-hidden="true">
+          <div class="ticker-track" id="ticker-track"></div>
+        </div>
+      </section>
+
+      <!-- PROBLEM -->
+      <section class="section problem">
+        <div class="container">
+          <p class="eyebrow reveal">The 4 a.m. problem</p>
+          <h2 class="reveal">
+            A forecast in one tab. A DOT map in another. A roster that doesn’t match the building.
+            <em>And a decision due before sunrise.</em>
+          </h2>
+          <div class="problem-grid">
+            <article class="bezel reveal">
+              <div class="bezel-core">
+                <p class="mono num">01</p>
+                <h3>Scattered inputs</h3>
+                <p>Facility managers piece the call together from forecasts, road maps and school
+                  announcements, under time pressure, often alone.</p>
+              </div>
+            </article>
+            <article class="bezel reveal" style="--d: 80ms">
+              <div class="bezel-core">
+                <p class="mono num">02</p>
+                <h3>Wrong recipients, late</h3>
+                <p>Who is assigned here? Who is on detail elsewhere this week? Who is already
+                  teleworking? The message lands after people are on the road.</p>
+              </div>
+            </article>
+            <article class="bezel reveal" style="--d: 160ms">
+              <div class="bezel-core">
+                <p class="mono num">03</p>
+                <h3>No record of why</h3>
+                <p>Two managers facing identical conditions decide differently, and when a closure
+                  that should have happened didn’t, nobody can reconstruct what was known.</p>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- HOW IT WORKS -->
+      <section class="section" id="how">
+        <div class="container">
+          <div class="section-head">
+            <p class="eyebrow reveal">How it works</p>
+            <h2 class="reveal">From raw signal to the right inbox, <em>with a human in the middle.</em></h2>
+          </div>
+          <ol class="flow">
+            <li class="bezel reveal">
+              <div class="bezel-core">
+                <span class="flow-step mono">Ingest</span>
+                <h3>Live signals</h3>
+                <p>NWS alerts, forecasts and observations for each facility’s point and zone, plus
+                  supplementary signals: state DOT road conditions, school district closures,
+                  air quality.</p>
+                <ul class="chips"><li>NWS / NOAA</li><li>State DOT 511</li><li>Schools</li><li>AirNow</li></ul>
+              </div>
+            </li>
+            <li class="bezel reveal" style="--d: 80ms">
+              <div class="bezel-core">
+                <span class="flow-step mono">Evaluate</span>
+                <h3>Facility-aware scoring</h3>
+                <p>Each input is checked against documented thresholds for that building, its
+                  shift start, its commute corridors and its people.</p>
+                <ul class="chips"><li>Location</li><li>Shift times</li><li>Accessibility</li></ul>
+              </div>
+            </li>
+            <li class="bezel reveal" style="--d: 160ms">
+              <div class="bezel-core">
+                <span class="flow-step mono">Recommend</span>
+                <h3>Graded posture</h3>
+                <p>A recommended operating status, the inputs behind it, which threshold was
+                  crossed and by how much, a confidence level and what would change it.</p>
+                <ul class="chips"><li>Reasoning</li><li>Confidence</li></ul>
+              </div>
+            </li>
+            <li class="bezel reveal flow-human" style="--d: 240ms">
+              <div class="bezel-core">
+                <span class="flow-step mono">Decide &amp; notify</span>
+                <h3>The manager approves</h3>
+                <p>The manager accepts, adjusts or overrides. Fieldcast builds the recipient list,
+                  drafts the message, routes channels and writes it all to the decision log.</p>
+                <ul class="chips"><li>SMS</li><li>Email</li><li>Audit trail</li></ul>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- POSTURES -->
+      <section class="section" id="postures">
+        <div class="container">
+          <div class="section-head">
+            <p class="eyebrow reveal">Graded, not binary</p>
+            <h2 class="reveal">Five operating postures. <em>The same ones the federal workforce already uses.</em></h2>
+            <p class="section-lede reveal">Recommendations map to OPM-style operating status categories,
+              so the output speaks the language employees and supervisors already know.</p>
+          </div>
+
+          <div class="bezel reveal">
+            <div class="bezel-core postures">
+              <div class="posture-scale" role="tablist" aria-label="Operating postures">
+                <button role="tab" class="posture-tab" data-posture="normal" style="--c: var(--p-normal)">Normal operations</button>
+                <button role="tab" class="posture-tab" data-posture="delay" style="--c: var(--p-delay)">Delayed arrival</button>
+                <button role="tab" class="posture-tab" data-posture="early" style="--c: var(--p-early)">Early dismissal</button>
+                <button role="tab" class="posture-tab" data-posture="telework" style="--c: var(--p-telework)">Leave / telework</button>
+                <button role="tab" class="posture-tab" data-posture="closed" style="--c: var(--p-closed)">Closed</button>
+              </div>
+              <div class="posture-meter" aria-hidden="true"><span id="posture-fill"></span></div>
+              <div class="posture-detail" role="tabpanel" id="posture-detail">
+                <div>
+                  <p class="mono label">Typical trigger</p>
+                  <p id="pd-trigger"></p>
+                </div>
+                <div>
+                  <p class="mono label">Who hears about it</p>
+                  <p id="pd-who"></p>
+                </div>
+                <div>
+                  <p class="mono label">Notification urgency</p>
+                  <p id="pd-urgency"></p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- RECOMMENDATION -->
+      <section class="section" id="recommendation">
+        <div class="container rec-grid">
+          <div class="rec-copy">
+            <p class="eyebrow reveal">The recommendation</p>
+            <h2 class="reveal">Everything the decision-maker needs, <em>on one screen.</em></h2>
+            <p class="section-lede reveal">Every input carries its source and timestamp. Every threshold
+              shows its margin. And the reasoning is written in plain language a manager can paste
+              straight into an email.</p>
+            <ul class="checklist reveal">
+              <li>Recommended posture</li>
+              <li>Each input, with source and timestamp</li>
+              <li>Which threshold was crossed, and by how much</li>
+              <li>Confidence, and what would change the call</li>
+              <li>A one-paragraph rationale, ready to send</li>
+            </ul>
+          </div>
+
+          <div class="bezel reveal" style="--d: 120ms">
+            <div class="bezel-core rec-card">
+              <div class="rec-top">
+                <div>
+                  <p class="mono tiny muted">Illustrative example · synthetic facility</p>
+                  <p class="rec-site">Ames Service Center, Iowa</p>
+                  <p class="muted small">48 assigned · shift starts 07:30</p>
+                </div>
+                <span class="posture-pill" style="--c: var(--p-telework)">Leave / telework</span>
+              </div>
+
+              <table class="rec-inputs">
+                <thead><tr><th>Input</th><th>Source</th><th>As of</th></tr></thead>
+                <tbody>
+                  <tr><td>Ice Storm Warning · Severe / Likely / Expected</td><td>NWS</td><td class="mono">03:52</td></tr>
+                  <tr><td>I-35 corridor: partially covered</td><td>Iowa DOT 511</td><td class="mono">03:55</td></tr>
+                  <tr><td>Ames CSD: schools closed</td><td>District site</td><td class="mono">04:01</td></tr>
+                </tbody>
+              </table>
+
+              <div class="rec-metrics">
+                <div>
+                  <p class="mono label">Threshold</p>
+                  <p>Warning in effect for facility zone during shift start</p>
+                </div>
+                <div>
+                  <p class="mono label">Confidence</p>
+                  <div class="confidence"><span style="--s: 0.78"></span></div>
+                  <p class="small muted">78% · drops if warning is downgraded to an advisory</p>
+                </div>
+              </div>
+
+              <div class="rationale">
+                <p class="mono label">Rationale</p>
+                <p id="rationale-text">The National Weather Service has issued an Ice Storm Warning for Story County that is in
+                  effect through the morning commute, and Iowa DOT reports the I-35 corridor as partially
+                  covered. Local schools are closed. We recommend unscheduled leave or telework for the
+                  Ames Service Center today; essential personnel should follow their separate reporting
+                  instructions.</p>
+                <button class="btn btn-small btn-ghost copy-btn" type="button" data-copy="rationale-text">
+                  <span>Copy for email</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ROLES -->
+      <section class="section" id="roles">
+        <div class="container">
+          <div class="section-head">
+            <p class="eyebrow reveal">One system, two views</p>
+            <h2 class="reveal">Managers get the full picture. <em>Employees get what applies to them.</em></h2>
+          </div>
+          <div class="roles-grid">
+            <article class="bezel reveal">
+              <div class="bezel-core role">
+                <p class="mono label">Manager</p>
+                <h3>The decision brief</h3>
+                <p>When conditions cross a threshold, the manager is alerted with the full context:
+                  live alerts, supplementary signals, who is on site, who is essential, and a
+                  recommendation to approve, adjust or override.</p>
+                <ul class="role-list">
+                  <li>Escalating alerts as conditions change</li>
+                  <li>Roster by building, shift and status</li>
+                  <li>One-tap approval and dispatch</li>
+                  <li>Full decision history</li>
+                </ul>
+              </div>
+            </article>
+            <article class="bezel reveal" style="--d: 100ms">
+              <div class="bezel-core role role-employee">
+                <p class="mono label">Employee</p>
+                <h3>Just what you need to know</h3>
+                <div class="phone">
+                  <div class="sms">
+                    <p class="mono tiny muted">Fieldcast · 04:10</p>
+                    <p><strong>Ames Service Center: unscheduled leave or telework today.</strong>
+                      Ice Storm Warning in effect through the morning commute.
+                      Telework-ready? Log on by 07:30. Otherwise, take unscheduled leave.
+                      Do not travel to the office.</p>
+                  </div>
+                </div>
+                <p class="small muted">Your building, your shift, what to do. Before you leave home.</p>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- NOTIFICATION -->
+      <section class="section" id="notify">
+        <div class="container">
+          <div class="section-head">
+            <p class="eyebrow reveal">The notification package</p>
+            <h2 class="reveal">Right people. Right channel. <em>And a reason for everyone left out.</em></h2>
+          </div>
+          <div class="bezel reveal">
+            <div class="bezel-core recipients">
+              <div class="recipients-bar" aria-hidden="true">
+                <span style="--w: 79%; --c: var(--green)"></span>
+                <span style="--w: 6%; --c: var(--amber)"></span>
+                <span style="--w: 11%; --c: var(--blue)"></span>
+                <span style="--w: 4%; --c: var(--muted)"></span>
+              </div>
+              <ul class="recipient-groups">
+                <li style="--c: var(--green)">
+                  <p class="r-num">38</p>
+                  <p class="r-title">Notify now</p>
+                  <p class="small muted">Assigned to the building and scheduled today.</p>
+                  <p class="mono tiny">SMS + email</p>
+                </li>
+                <li style="--c: var(--amber)">
+                  <p class="r-num">3</p>
+                  <p class="r-title">Essential personnel</p>
+                  <p class="small muted">Reporting requirements unchanged. Separate instructions.</p>
+                  <p class="mono tiny">SMS + call</p>
+                </li>
+                <li style="--c: var(--blue)">
+                  <p class="r-num">5</p>
+                  <p class="r-title">Already teleworking</p>
+                  <p class="small muted">Informed, but nobody gets woken up at 4 a.m.</p>
+                  <p class="mono tiny">Email only</p>
+                </li>
+                <li style="--c: var(--muted)">
+                  <p class="r-num">2</p>
+                  <p class="r-title">Excluded</p>
+                  <p class="small muted">On temporary duty at another site, covered by that site’s decision.</p>
+                  <p class="mono tiny">No message</p>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- DECISION LOG -->
+      <section class="section" id="log">
+        <div class="container log-grid">
+          <div>
+            <p class="eyebrow reveal">The decision log</p>
+            <h2 class="reveal">What was known, when, <em>and what was decided.</em></h2>
+            <p class="section-lede reveal">Every snapshot of every feed is stored with the raw payload.
+              Every recommendation, approval and override is timestamped and attributed. Weeks later,
+              anyone can replay the morning exactly as the manager saw it.</p>
+          </div>
+          <div class="bezel reveal" style="--d: 120ms">
+            <ol class="bezel-core timeline">
+              <li><time class="mono">03:52</time><p><strong>Ingested</strong> NWS Ice Storm Warning, Story County</p><span class="mono tiny muted">snapshot #2291 · raw payload stored</span></li>
+              <li><time class="mono">03:55</time><p><strong>Ingested</strong> Iowa DOT: I-35 partially covered</p><span class="mono tiny muted">snapshot #2292</span></li>
+              <li><time class="mono">04:01</time><p><strong>Ingested</strong> Ames CSD closure announcement</p><span class="mono tiny muted">snapshot #2293</span></li>
+              <li><time class="mono">04:02</time><p><strong>Recommended</strong> Leave / telework · confidence 78%</p><span class="mono tiny muted">rules v1.3 · 2 thresholds crossed</span></li>
+              <li class="tl-human"><time class="mono">04:09</time><p><strong>Approved</strong> by facility manager</p><span class="mono tiny muted">no override · note attached</span></li>
+              <li><time class="mono">04:10</time><p><strong>Dispatched</strong> 46 messages</p><span class="mono tiny muted">2 excluded with reason</span></li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <!-- THRESHOLDS -->
+      <section class="section" id="thresholds">
+        <div class="container">
+          <div class="section-head">
+            <p class="eyebrow reveal">Threshold defensibility</p>
+            <h2 class="reveal">Every cutoff has a source. <em>No magic numbers.</em></h2>
+            <p class="section-lede reveal">Our thresholds are anchored to standards that already exist,
+              so a recommendation can be defended to leadership, to employees, and after the fact.</p>
+          </div>
+          <div class="bezel reveal">
+            <div class="bezel-core table-wrap">
+              <table class="thresholds">
+                <thead>
+                  <tr><th>Signal</th><th>Anchor</th><th>Where it comes from</th></tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Alert seriousness</td>
+                    <td>Severity, certainty and urgency fields on each alert</td>
+                    <td>Common Alerting Protocol fields set by the NWS on every alert</td>
+                  </tr>
+                  <tr>
+                    <td>Winter weather</td>
+                    <td>Ice Storm / Winter Storm Warning in the facility’s zone</td>
+                    <td>NWS warning criteria, set by each local forecast office</td>
+                  </tr>
+                  <tr>
+                    <td>Extreme heat</td>
+                    <td>Extreme Heat Warning or high HeatRisk</td>
+                    <td>NWS heat products and the NWS HeatRisk scale</td>
+                  </tr>
+                  <tr>
+                    <td>Road conditions</td>
+                    <td>Condition category on commute corridors</td>
+                    <td>The state DOT’s own 511 condition categories</td>
+                  </tr>
+                  <tr>
+                    <td>Air quality</td>
+                    <td>AQI category “Unhealthy” or worse</td>
+                    <td>EPA Air Quality Index breakpoints via AirNow</td>
+                  </tr>
+                  <tr>
+                    <td>Output posture</td>
+                    <td>Five graded operating statuses</td>
+                    <td>OPM operating status categories for federal employees</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PRINCIPLE + CTA -->
+      <section class="section cta">
+        <div class="glow glow-c" aria-hidden="true"></div>
+        <div class="container cta-inner">
+          <p class="eyebrow reveal">Our principle</p>
+          <h2 class="reveal cta-title">We don’t automate the decision.<br /><em>We make sure it’s a good one.</em></h2>
+          <p class="section-lede reveal">The person making the call gets everything in one place, on time.
+            Whatever they decide reaches the right people, fast. And the record holds up afterward.</p>
+          <div class="hero-actions reveal">
+            <a class="btn btn-primary" href="../login.html">
+              <span>Open dashboard</span>
+              <span class="btn-icon" aria-hidden="true">↗</span>
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container footer-inner">
+        <p class="brand"><span>Fieldcast</span></p>
+        <p class="small muted">Built at Hack Midwest 2026 for the USDA facility closure challenge.
+          Weather data from the <a href="https://www.weather.gov/documentation/services-web-api" target="_blank" rel="noopener">National Weather Service API</a>.
+          Facility and employee data shown here is synthetic.</p>
+      </div>
+    </footer>
+  </body>
+</html>
