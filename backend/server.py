@@ -48,6 +48,8 @@ Routes
   POST /api/login                          {"userId": "482917"}
   GET  /api/me
   GET  /api/employees                      (manager) roster for the dashboard
+  GET  /api/locations                     all work sites for the dashboard map
+  GET  /api/weather?locationId=..         selected-site NWS forecast and alerts
   GET  /api/locations/<id>                 PUT (manager): {"lat":..,"lon":..,"tz":"America/Chicago"}
   GET  /api/alerts?lat=..&lon=..
   GET  /api/shelters?lat=..&lon=..
@@ -137,6 +139,8 @@ SESSION_HOURS = int(os.environ.get("SESSION_HOURS", "12"))
 
 # NWS asks every client to identify itself. Change the email.
 NWS_ALERTS_URL = "https://api.weather.gov/alerts/active"
+NWS_POINTS_URL = "https://api.weather.gov/points"
+GEOCODER_URL = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
 NWS_HEADERS = {
     "User-Agent": os.environ.get("NWS_USER_AGENT", "ClosureCall/0.1 (your-email@example.com)"),
     "Accept": "application/geo+json",
@@ -585,6 +589,99 @@ def fetch_nws_alerts(lat, lon):
     except (URLError, TimeoutError, json.JSONDecodeError, ValueError, OSError) as err:
         return {"source": "nws_alerts", "ok": False, "fetched_at": fetched_at,
                 "error": str(err), "raw": None}
+
+
+def fetch_nws_json(url):
+    with urlopen(Request(url, headers=NWS_HEADERS), timeout=10) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("The National Weather Service returned an invalid response.")
+    return data
+
+
+geocode_cache = {}
+geocode_cache_lock = Lock()
+nominatim_lock = Lock()
+last_nominatim_request = 0.0
+
+
+def geocode_location(address, location_id):
+    global last_nominatim_request
+
+    with geocode_cache_lock:
+        cached = geocode_cache.get(location_id)
+    if cached:
+        return cached
+
+    census_query = urlencode({
+        'address': address,
+        'benchmark': 'Public_AR_Current',
+        'format': 'json',
+    })
+    census_url = f"{GEOCODER_URL}?{census_query}"
+    with urlopen(Request(census_url, headers={"User-Agent": NWS_HEADERS["User-Agent"]}), timeout=15) as resp:
+        census_data = json.loads(resp.read().decode("utf-8"))
+    if not isinstance(census_data, dict):
+        raise ValueError("Census Geocoder returned an invalid response.")
+    census_result = census_data.get("result")
+    if not isinstance(census_result, dict):
+        raise ValueError("Census Geocoder returned an invalid result.")
+    matches = census_result.get("addressMatches", [])
+    if matches:
+        match = matches[0]
+        if not isinstance(match, dict) or not isinstance(match.get("coordinates"), dict):
+            raise ValueError("Census Geocoder returned invalid coordinates.")
+        coordinates = match["coordinates"]
+        result = {
+            "latitude": float(coordinates["y"]),
+            "longitude": float(coordinates["x"]),
+            "matchedAddress": matches[0].get("matchedAddress", address),
+            "precision": "address",
+        }
+    else:
+        address_parts = [part.strip() for part in address.split(",")]
+        if len(address_parts) < 2 or not address_parts[1]:
+            raise LookupError("The selected address could not be geocoded.")
+        locality = ", ".join(address_parts[1:])
+        nominatim_url = "https://nominatim.openstreetmap.org/search?" + urlencode({
+            "q": locality,
+            "format": "jsonv2",
+            "limit": 1,
+            "countrycodes": "us",
+        })
+        with nominatim_lock:
+            wait_seconds = 1.0 - (monotonic() - last_nominatim_request)
+            if wait_seconds > 0:
+                time.sleep(wait_seconds)
+            with urlopen(Request(nominatim_url, headers={
+                "User-Agent": "FieldcastAdminDashboard/1.0",
+                "Accept": "application/json",
+            }), timeout=15) as resp:
+                nominatim_data = json.loads(resp.read().decode("utf-8"))
+            last_nominatim_request = monotonic()
+        if not isinstance(nominatim_data, list) or not nominatim_data:
+            raise LookupError("The selected address and its locality could not be geocoded.")
+        locality_match = nominatim_data[0]
+        if not isinstance(locality_match, dict):
+            raise ValueError("OpenStreetMap Nominatim returned an invalid result.")
+        result = {
+            "latitude": float(locality_match["lat"]),
+            "longitude": float(locality_match["lon"]),
+            "matchedAddress": locality_match.get("display_name", locality),
+            "precision": "locality",
+        }
+
+    if not (-90 <= result["latitude"] <= 90 and -180 <= result["longitude"] <= 180):
+        raise ValueError("Geocoder returned coordinates outside valid ranges.")
+    result["latitude"] = round(result["latitude"], 4)
+    result["longitude"] = round(result["longitude"], 4)
+    with geocode_cache_lock:
+        geocode_cache[location_id] = result
+    return result
+
+
+weather_cache = {}
+weather_cache_lock = Lock()
 
 
 def summarize_alerts(raw):
@@ -1413,6 +1510,8 @@ def scan_loop():
 ROUTES = [(m, re.compile(p), name, access) for m, p, name, access in [
     ("GET", r"/api/health", "h_health", "public"),
     ("POST", r"/api/login", "h_login", "public"),
+    ("GET", r"/api/locations", "h_locations", "public"),
+    ("GET", r"/api/weather", "h_weather", "public"),
     ("GET", r"/api/me", "h_me", "auth"),
     ("GET", r"/api/employees", "h_employees_list", "manager"),
     ("GET", r"/api/locations/(\d+)", "h_location_get", "auth"),
@@ -1541,6 +1640,151 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
         } for r in rows])
 
     # ----- facilities -----
+    def h_locations(self, employee, query):
+        with get_db() as conn:
+            has_address = conn.execute(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+                "WHERE table_schema = current_schema() AND table_name = 'locations' "
+                "AND column_name = 'address')"
+            ).fetchone()[0]
+            address_field = "l.address" if has_address else "NULL"
+            rows = conn.execute(
+                f"SELECT l.location_id, l.name, {address_field} AS address, g.lat, g.lon "
+                "FROM locations l LEFT JOIN location_geo g ON g.location_id = l.location_id "
+                "ORDER BY l.name"
+            ).fetchall()
+        self.send_json([
+            {"locationId": row["location_id"], "name": row["name"], "address": row["address"],
+             "latitude": row["lat"], "longitude": row["lon"]}
+            for row in rows
+        ])
+
+    def h_weather(self, employee, query):
+        raw_location_id = query.get("locationId", [""])[0]
+        try:
+            location_id = int(raw_location_id)
+        except (TypeError, ValueError):
+            self.send_json({"error": "A valid locationId is required."}, status=400)
+            return
+
+        with get_db() as conn:
+            has_address = conn.execute(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+                "WHERE table_schema = current_schema() AND table_name = 'locations' "
+                "AND column_name = 'address')"
+            ).fetchone()[0]
+            address_field = "l.address" if has_address else "NULL"
+            loc = conn.execute(
+                f"SELECT l.location_id, l.name, {address_field} AS address, g.lat, g.lon "
+                "FROM locations l LEFT JOIN location_geo g ON g.location_id = l.location_id "
+                "WHERE l.location_id = ?",
+                (location_id,),
+            ).fetchone()
+        if loc is None:
+            self.send_json({"error": "Location not found."}, status=404)
+            return
+
+        with weather_cache_lock:
+            cached = weather_cache.get(location_id)
+            if cached and monotonic() - cached["cachedAt"] < ALERT_CACHE_SECONDS:
+                self.send_json(cached["value"])
+                return
+
+        address = loc["address"]
+        geocoded = None
+        try:
+            if address and address.strip():
+                try:
+                    geocoded = geocode_location(address, location_id)
+                    latitude, longitude = geocoded["latitude"], geocoded["longitude"]
+                except (URLError, TimeoutError, json.JSONDecodeError, ValueError, LookupError,
+                        KeyError, TypeError, OSError):
+                    if loc["lat"] is None or loc["lon"] is None:
+                        raise
+                    latitude, longitude = loc["lat"], loc["lon"]
+                    geocoded = {"precision": "configured-site", "matchedAddress": None}
+            elif loc["lat"] is not None and loc["lon"] is not None:
+                latitude, longitude = loc["lat"], loc["lon"]
+                geocoded = {"precision": "configured-site", "matchedAddress": None}
+            else:
+                self.send_json({"error": "This work site has no address or configured coordinates."}, status=404)
+                return
+
+            points = fetch_nws_json(f"{NWS_POINTS_URL}/{latitude},{longitude}")
+            point_properties = points.get("properties")
+            if not isinstance(point_properties, dict):
+                raise ValueError("The National Weather Service returned an invalid point response.")
+            forecast_url = point_properties.get("forecastHourly")
+            if not forecast_url:
+                raise ValueError("The National Weather Service did not provide an hourly forecast URL.")
+            hourly = fetch_nws_json(forecast_url)
+            forecast_properties = hourly.get("properties")
+            if not isinstance(forecast_properties, dict):
+                raise ValueError("The National Weather Service returned an invalid forecast response.")
+            periods = forecast_properties.get("periods", [])
+            if not periods:
+                raise ValueError("The National Weather Service returned no hourly forecast periods.")
+            if not isinstance(periods[0], dict):
+                raise ValueError("The National Weather Service returned an invalid hourly forecast period.")
+        except (URLError, TimeoutError, json.JSONDecodeError, ValueError, LookupError,
+                KeyError, TypeError, OSError) as err:
+            self.send_json({"error": f"Unable to load the National Weather Service forecast: {err}"}, status=502)
+            return
+
+        period = periods[0]
+        probability = (period.get("probabilityOfPrecipitation") or {}).get("value")
+        humidity = (period.get("relativeHumidity") or {}).get("value")
+        alert_snapshot = fetch_nws_alerts(latitude, longitude)
+        snapshot_id = save_snapshot(alert_snapshot, latitude, longitude)
+        alerts = []
+        alerts_error = None
+        if alert_snapshot["ok"]:
+            for feature in (alert_snapshot["raw"] or {}).get("features", []):
+                if not isinstance(feature, dict):
+                    continue
+                properties = feature.get("properties") or {}
+                if not isinstance(properties, dict):
+                    continue
+                if properties.get("status") not in (None, "Actual"):
+                    continue
+                alerts.append({
+                    "id": properties.get("id") or feature.get("id"),
+                    "event": properties.get("event"),
+                    "severity": properties.get("severity"),
+                    "headline": properties.get("headline"),
+                    "geometry": feature.get("geometry"),
+                })
+        else:
+            alerts_error = f"Active NWS alerts could not be loaded: {alert_snapshot['error']}"
+
+        result = {
+            "location": {
+                "id": location_id,
+                "name": loc["name"],
+                "address": address,
+                "matchedAddress": geocoded["matchedAddress"],
+                "geocodePrecision": geocoded["precision"],
+            },
+            "coordinates": {"latitude": latitude, "longitude": longitude},
+            "forecast": {
+                "startTime": period.get("startTime"),
+                "shortForecast": period.get("shortForecast"),
+                "temperature": period.get("temperature"),
+                "temperatureUnit": period.get("temperatureUnit"),
+                "windSpeed": period.get("windSpeed"),
+                "windDirection": period.get("windDirection"),
+                "probabilityOfPrecipitation": probability,
+                "relativeHumidity": humidity,
+            },
+            "alerts": alerts,
+            "alertsError": alerts_error,
+            "snapshotId": snapshot_id,
+            "updatedAt": now_iso(),
+        }
+        with weather_cache_lock:
+            weather_cache[location_id] = {"cachedAt": monotonic(), "value": result}
+        self.send_json(result)
+
     def h_location_get(self, employee, query, location_id):
         loc = load_location(int(location_id))
         if loc is None:
