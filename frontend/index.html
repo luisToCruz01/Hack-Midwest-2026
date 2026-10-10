@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A starter app for the Hack Midwest 2026 project."
+    />
+    <title>Hack Midwest 2026</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <main class="page">
+      <header class="page-header">
+        <p class="eyebrow">Hack Midwest 2026</p>
+        <h1>Project entries</h1>
+        <p class="intro">A starter frontend connected to an API and SQLite database.</p>
+        <p id="connection-status" class="status" role="status">Checking connection…</p>
+      </header>
+
+      <section class="panel" aria-labelledby="new-entry-heading">
+        <h2 id="new-entry-heading">Add an entry</h2>
+        <form id="entry-form">
+          <label for="title">Title</label>
+          <input id="title" name="title" maxlength="120" required />
+
+          <label for="description">Description</label>
+          <textarea id="description" name="description" maxlength="1000" rows="3"></textarea>
+
+          <button type="submit">Save entry</button>
+          <p id="form-message" class="form-message" role="status"></p>
+        </form>
+      </section>
+
+      <section class="entries-section" aria-labelledby="entries-heading">
+        <h2 id="entries-heading">Saved entries</h2>
+        <ul id="entries" class="entries" aria-live="polite"></ul>
+      </section>
+    </main>
+  </body>
+</html>
