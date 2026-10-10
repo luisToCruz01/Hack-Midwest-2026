@@ -36,6 +36,7 @@ Routes
   GET  /api/health
   POST /api/login                          {"userId": "482917"}
   GET  /api/me
+  GET  /api/employees                      read-only SQLite roster
   GET  /api/locations/<id>                 PUT (manager): {"lat":..,"lon":..,"tz":"America/Chicago"}
   GET  /api/alerts?lat=..&lon=..
   GET  /api/shelters?lat=..&lon=..
@@ -60,6 +61,7 @@ import math
 import os
 import re
 import secrets
+import sqlite3
 import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -83,6 +85,7 @@ from psycopg_pool import ConnectionPool
 HERE = Path(__file__).resolve().parent
 PROJECT_DIRECTORY = HERE.parent
 FRONTEND_DIRECTORY = PROJECT_DIRECTORY / "frontend"
+DATABASE_PATH = PROJECT_DIRECTORY / "database" / "fieldcast.db"
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 DB_POOL_MAX = int(os.environ.get("DB_POOL_MAX", "10"))  # keep under your Postgres plan's connection limit
 # Looks in database/ first (your layout), then next to this file.
@@ -1149,6 +1152,7 @@ ROUTES = [(m, re.compile(p), name, access) for m, p, name, access in [
     ("GET", r"/api/health", "h_health", "public"),
     ("POST", r"/api/login", "h_login", "public"),
     ("GET", r"/api/me", "h_me", "auth"),
+    ("GET", r"/api/employees", "h_employees", "public"),
     ("GET", r"/api/locations/(\d+)", "h_location_get", "auth"),
     ("PUT", r"/api/locations/(\d+)", "h_location_put", "manager"),
     ("GET", r"/api/alerts", "h_alerts", "auth"),
@@ -1250,6 +1254,41 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
                         "shiftEnd": row["shift_end"], "daysOfWeek": row["days_of_week"],
                         "locationSharing": bool(row["consent"]),
                         "isManager": row["user_id"] in MANAGER_IDS})
+
+    def h_employees(self, employee, query):
+        try:
+            database_uri = f"{DATABASE_PATH.as_uri()}?mode=ro"
+            with sqlite3.connect(database_uri, uri=True) as database:
+                employees = database.execute(
+                    """
+                    SELECT e.user_id, e.full_name, e.shift_start, e.shift_end,
+                           e.days_of_week, l.location_id, l.name, l.address
+                    FROM employees AS e
+                    JOIN locations AS l ON l.location_id = e.location_id
+                    ORDER BY full_name COLLATE NOCASE
+                    """
+                ).fetchall()
+        except sqlite3.Error as error:
+            self.log_error("Unable to read employee database: %s", error)
+            self.send_json({"error": "Unable to load employees from the database."}, status=500)
+            return
+
+        self.send_json([
+            {
+                "userId": user_id,
+                "fullName": full_name,
+                "shiftStart": shift_start,
+                "shiftEnd": shift_end,
+                "daysOfWeek": days_of_week,
+                "locationId": location_id,
+                "locationName": location_name,
+                "locationAddress": location_address,
+            }
+            for (
+                user_id, full_name, shift_start, shift_end, days_of_week,
+                location_id, location_name, location_address,
+            ) in employees
+        ])
 
     # ----- facilities -----
     def h_location_get(self, employee, query, location_id):

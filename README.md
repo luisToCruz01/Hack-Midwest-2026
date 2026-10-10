@@ -38,13 +38,15 @@ snapshots, and SQLite-backed field reports.
 
 ## Employee database
 
-`database/fieldcast.db` is a SQLite database seeded with 200 numbered locations
-and 30 employees per location (6,000 employees total). Location 001 preserves
-the original roster; the other employees are synthetic sample data. User IDs
-are stored as text to preserve leading zeros. The SQL schema and roster data
-are in `database/schema.sql`. On startup, the backend applies this seed schema
-to its active database (`closure_call.db` by default), alongside the entries
-and alert snapshot tables.
+`database/fieldcast.db` is a SQLite database seeded with the 200 supplied
+location names and street addresses and 30 employees per location (6,000
+employees total). Addresses are stored separately from location names.
+Location 001 preserves the original roster; the other employees are synthetic
+sample data. User IDs are stored as text to preserve leading zeros. The SQL
+schema and roster data are in `database/schema.sql`. Employee API responses
+include each person's location ID, name, and address. On startup, the backend
+applies this seed schema to its active database (`closure_call.db` by default),
+alongside the entries and alert snapshot tables.
 
 To create or rebuild the seeded database from the project root (replaces the
 existing database file):
