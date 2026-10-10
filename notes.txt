@@ -1,0 +1,408 @@
+# USDA Emergency Management System — Database and Application Expansion
+
+I want to expand our existing USDA Weather Emergency Management System into a fully functional, location-aware emergency notification and facility closure management platform.
+
+We already have a PostgreSQL database hosted on Render. **Do not create a replacement database, delete existing tables, or overwrite existing employee data.** Build on our current database and preserve its existing relationships.
+
+## 1. Existing PostgreSQL Database
+
+Our existing database is hosted on Render and contains at least these two tables:
+
+**Table: `locations`**
+- `location_id`
+- `name`
+- `address`
+
+**Table: `employees`**
+- `user_id`
+- `location_id`
+- `full_name`
+- `phone_number`
+- `shift_start`
+- `shift_end`
+- `days_of_week`
+
+These are the columns currently known. Inspect the actual database schema before making changes because additional columns or tables may already exist.
+
+`employees.location_id` represents the employee's normally assigned facility.
+
+First, inspect existing tables, primary keys, foreign keys, column types, indexes, and record counts. Check whether PostGIS is available.
+
+Create a safe, additive database migration. Preserve all existing employee records and IDs. Do not change existing column types or remove columns without first explaining why.
+
+Use environment variables for database credentials. Do not print connection strings, passwords, or employee personal information in logs.
+
+## 2. Expand Facility Information
+
+Enhance the existing `locations` table to support:
+
+- Facility name and address
+- Latitude and longitude
+- Facility timezone
+- Opening and closing hours
+- Facility manager
+- Facility operating status
+- Emergency contact information
+- Approved shelter-in-place locations
+- Emergency evacuation information
+
+Use PostGIS for geographic matching if supported.
+
+The frontend should allow authorized administrators to add, edit, and deactivate facilities.
+
+## 3. Employee Management and Permissions
+
+Expand employee management to include:
+
+- Existing unique employee ID
+- Full name and phone number
+- Email address
+- Permanently assigned facility
+- Essential personnel designation
+- Telework eligibility
+- Employment status
+- Preferred notification channels
+- Emergency location-sharing status
+
+Implement role-based access control with four roles:
+
+**System Administrator:** Manages the system, users, integrations, and role assignments.
+
+**Facility Manager:** Manages facilities, employee schedules, and authorized closure decisions.
+
+**Emergency Operator:** Monitors weather events, notification delivery, acknowledgments, and assistance requests.
+
+**Employee:** Views personal schedules, emergency notifications, safety instructions, and acknowledgment history.
+
+Enforce permissions in the backend, not just the frontend. Use secure authentication rather than trusting a submitted employee ID.
+
+## 4. Employee Scheduling System
+
+Create scheduling functionality while preserving the existing shift columns.
+
+Add an `employee_schedules` table that supports:
+
+- Employee ID
+- Assigned work location
+- Shift start and end timestamps
+- Work date and timezone
+- On-site, telework, or remote status
+- Recurring and temporary work assignments
+- Schedule status
+
+Also create a `schedule_exceptions` table to account for:
+
+- Vacation
+- Approved leave
+- Medical appointments or other unavailable periods
+- Temporary location assignments
+- Shift cancellations
+- Schedule changes
+
+Do not store medical details or reasons for private appointments. Use a general unavailable or approved-leave status.
+
+A key requirement is that **the system must understand both where an employee currently is and where they are scheduled to be in the future.**
+
+The administrator should be able to manage schedules through a calendar-style frontend.
+
+## 5. Employee Location Tracking
+
+Create an `employee_positions` table.
+
+Store:
+
+- Employee ID
+- Latest authorized latitude and longitude
+- GPS accuracy
+- Timestamp of the location update
+- Source of location information
+- Location status: current, stale, or unknown
+
+Location sharing must be permission-based and limited to authorized emergency purposes.
+
+Do not assume a missing or outdated location means an employee is safe. Show unknown when appropriate.
+
+Avoid unnecessary historical GPS storage. Apply retention limits and restrict access to precise locations.
+
+## 6. Live National Weather Service Integration
+
+Connect the backend directly to the public National Weather Service API.
+
+API documentation:
+https://www.weather.gov/documentation/services-web-api
+
+Active alerts:
+https://api.weather.gov/alerts/active
+
+The system must retrieve actual NWS weather data, including:
+
+- Unique NWS alert ID
+- Hazard type
+- Severity
+- Urgency
+- Certainty
+- Alert description
+- Recommended safety instructions
+- Geographic warning boundaries
+- Issue and expiration timestamps
+- Source and last retrieval time
+
+Create a `weather_alerts` table.
+
+Support actual alert polygons where provided and relevant forecast zones or counties where polygon geometry is unavailable.
+
+Implement a background task to periodically check for new alerts, updates, cancellations, and expirations.
+
+Use an appropriate NWS API User-Agent, caching, and reasonable polling intervals.
+
+Avoid sending duplicate notifications for the same unchanged alert.
+
+## 7. Intelligent Employee Alert Targeting
+
+This is one of our most important features.
+
+The backend should determine which employees need a weather notification using their current location, scheduled work location, and schedule exceptions.
+
+Implement the following logic:
+
+**Scenario A — Employee currently inside a dangerous weather area**
+
+Send an immediate safety warning when an applicable life-safety alert affects their known current location.
+
+Provide appropriate protective-action guidance and request acknowledgment.
+
+**Scenario B — Employee outside the area but scheduled to work inside it**
+
+Check whether the employee's next scheduled shift overlaps the relevant hazard or facility operating restriction.
+
+Send an appropriate notification before they are expected to travel.
+
+**Scenario C — Employee assigned to a facility but currently on approved vacation or leave outside the affected area**
+
+Do not send unnecessary routine facility-status notifications if the employee has no affected upcoming shift.
+
+However, never suppress an applicable immediate life-safety alert if the employee's actual known location is in danger.
+
+**Scenario D — Employee working at a temporary location**
+
+Use the temporary assignment and actual schedule rather than relying exclusively on their permanent facility.
+
+**Scenario E — Employee location unavailable**
+
+Use the employee's schedule and assigned facility as fallback information. Mark their actual safety status as unknown.
+
+Create backend logic that records exactly why each employee was included or excluded from a particular notification.
+
+Include notification deduplication and escalation for updated severe threats.
+
+## 8. FEMA Shelter Database and Internal Safe Locations
+
+Integrate public shelter information from FEMA's National Shelter System, subject to API availability.
+
+FEMA shelter service:
+https://gis.fema.gov/arcgis/rest/services/NSS/OpenShelters/MapServer
+
+Create a `safe_locations` table containing:
+
+- Unique safe location ID
+- Location name
+- Address and coordinates
+- Public or internal location type
+- Source organization
+- Appropriate hazard types
+- Reported opening status
+- Capacity, where available
+- Accessibility information
+- Last verified timestamp
+- Associated USDA facility, if applicable
+
+Allow authorized facility managers to register internal safe locations such as approved tornado refuge rooms, evacuation assembly points, and designated emergency shelters.
+
+Add a frontend map that displays appropriate safe locations near affected employees.
+
+**Important safety rule:** Do not automatically send employees to the geographically nearest shelter. Recommendations must depend on the type of weather emergency.
+
+For example, during a tornado warning, recommend appropriate immediate shelter-in-place rather than directing someone to drive to a distant shelter.
+
+Only provide evacuation destinations and routes when the protective action is appropriate and shelter availability and route conditions have been sufficiently verified.
+
+If no safe destination can be confirmed, state that clearly and display authoritative emergency instructions instead of inventing a destination.
+
+## 9. Independent Notification System
+
+We do not have access to BlackBerry AtHoc and do not want to depend on it.
+
+Build our own notification system.
+
+Use:
+
+- Twilio for real SMS delivery
+- Email delivery through a supported provider
+- Optional Firebase push notifications
+
+Create a `notifications` table to track:
+
+- Notification ID
+- Associated weather alert ID
+- Employee ID
+- Notification type
+- Message content
+- Reason for targeting
+- Delivery channel
+- Provider message ID
+- Creation and sending timestamps
+- Delivery status
+
+Create a separate table to record delivery attempts and provider callbacks.
+
+The system must distinguish between message creation, provider acceptance, successful delivery, failed delivery, and actual employee acknowledgment.
+
+Send real notifications only to authorized test recipients during development. Label all demonstration messages clearly as test alerts.
+
+## 10. Employee Acknowledgment Tracking
+
+Create an `acknowledgments` table connected to employee IDs and notifications.
+
+After receiving an alert, employees should be able to select:
+
+- I received this notification
+- I am safe
+- I am sheltering in place
+- I need assistance
+
+Store the selected status and timestamp.
+
+Allow employees to respond through a secure acknowledgment page linked from their SMS or through their authenticated employee dashboard.
+
+Use secure, expiring acknowledgment links rather than exposing employee IDs in public URLs.
+
+Update the administrator dashboard when acknowledgments arrive.
+
+Implement configurable reminders for employees who have not responded.
+
+If an employee selects "I need assistance," flag it immediately for the emergency operator and create an escalation record.
+
+Acknowledgment does not automatically prove an employee is safe.
+
+## 11. Facility Closure Recommendations
+
+Preserve the original USDA challenge requirement: provide a graded facility operating-status recommendation, not just an automatic warning.
+
+Supported postures:
+
+- Normal operations
+- Delayed opening
+- Early dismissal
+- Unscheduled leave or telework
+- Full facility closure
+
+Use NWS information, supplementary operational data such as road conditions, and documented facility-specific thresholds.
+
+Implement explicit, testable decision rules.
+
+For each recommendation, show:
+
+- Recommended posture
+- Supporting weather and operational evidence
+- Data source and timestamp
+- Thresholds crossed
+- Data quality and uncertainty
+- Plain-language explanation
+- Factors that would change the recommendation
+
+**Only an authorized human manager can approve a closure or other official facility operating-status decision.**
+
+Maintain a clear distinction between immediate weather safety alerts and official facility closure notifications.
+
+Create `decision_records` and related evidence/audit tables to preserve the recommendation, source evidence, policy version, approval, overrides, and final decision.
+
+## 12. Administrator Frontend
+
+Expand the existing frontend rather than replacing working functionality.
+
+The administrator dashboard should include:
+
+**Overview:** Active weather alerts, monitored facilities, potentially affected employees, notifications sent, and outstanding acknowledgments.
+
+**Live Weather Map:** NWS alert boundaries, USDA facilities, authorized employee location indicators, and verified shelter locations.
+
+**Employee Management:** Search, add, edit, and deactivate employee records and assign roles.
+
+**Schedule Management:** Calendar interface for employee shifts, facility assignments, telework, and leave exceptions.
+
+**Alert Management:** View live warnings, affected employees, notification recipients, and targeting explanations.
+
+**Facility Decisions:** Review recommendations and approve or override operating-status changes.
+
+**Emergency Responses:** Track acknowledgments, employees requiring assistance, and notification delivery failures.
+
+**Decision History:** View and reconstruct past incidents, supporting data, notification activity, and manager approvals.
+
+## 13. Employee Frontend
+
+Create a mobile-friendly employee interface with:
+
+- Personal schedule
+- Assigned facility
+- Active relevant weather warnings
+- Facility operating status
+- Emergency notifications
+- Acknowledgment controls
+- Safe-location information
+- Location-sharing controls
+- Notification history
+
+Employees should only access their own personal information unless explicitly authorized for another role.
+
+## 14. Backend and Database Requirements
+
+Use our existing project technology where practical.
+
+If additional backend infrastructure is needed, prefer Python FastAPI with PostgreSQL and PostGIS.
+
+Use database migrations rather than manually rebuilding existing tables.
+
+Create foreign keys, indexes, input validation, secure API endpoints, and audit logging.
+
+Use UTC timestamps internally and facility-specific timezones for schedule presentation and local operating decisions.
+
+Implement actual backend functionality rather than frontend-only mock buttons.
+
+For live weather and external API failures, provide clear error states and avoid treating unavailable data as evidence of safety.
+
+## 15. Implementation Process
+
+Please follow this order:
+
+1. Inspect the current PostgreSQL schema and existing project code.
+2. Identify existing functionality that can be reused.
+3. Explain necessary database modifications and how they relate to the existing tables.
+4. Create a backup or recovery plan and validate non-destructive migration scripts.
+5. Apply approved additive migrations to the connected database when authorized, preserving existing records.
+6. Implement backend models, API routes, weather ingestion, and employee targeting.
+7. Integrate real notification delivery and acknowledgment tracking.
+8. Build or update administrator and employee frontend interfaces.
+9. Add shelter discovery and hazard-appropriate protective-action logic.
+10. Test the entire workflow using synthetic employee records and real NWS data.
+
+Do not insert real employee data or send real emergency messages without authorization.
+
+## 16. Required Demonstration
+
+I want the final system to demonstrate this complete workflow:
+
+1. The backend retrieves an actual NWS weather alert.
+2. The system determines which employees are inside its affected geographic area.
+3. It checks employee schedules to identify additional people expected to enter the affected area.
+4. It excludes employees who are confirmed unaffected and have no relevant upcoming shifts.
+5. It shows the administrator why each employee was included or excluded.
+6. It provides appropriate safety instructions and, where applicable, verified safe locations.
+7. The administrator authorizes a clearly labeled test notification.
+8. The system sends a real SMS to a designated test employee.
+9. The employee acknowledges the message from their phone.
+10. The administrator dashboard updates with the response.
+11. The database stores the full record of the alert, evidence, recipient selection, notification, delivery, acknowledgment, and any closure decision.
+
+**Important:** I want this implemented as part of our existing project, using our existing Render PostgreSQL database. Preserve current functionality. Begin by inspecting what we already have so no tables, relationships, or working code are unnecessarily duplicated.
+
+After inspection, show me the actual current schema, the migration plan, and which parts can be implemented immediately. Then implement the approved changes and test them. Do not claim functionality is complete unless it has actually been connected and verified.
