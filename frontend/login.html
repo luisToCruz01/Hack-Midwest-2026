@@ -6,6 +6,7 @@
     <meta name="description" content="Log in to Fieldcast with your user ID." />
     <title>Log in | Fieldcast</title>
     <link rel="stylesheet" href="./styles.css" />
+    <script src="./login.js" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -22,17 +23,21 @@
           <p class="eyebrow">ACCOUNT ACCESS</p>
           <h1 id="login-title">Welcome back</h1>
           <p class="page-description">Enter your user ID to continue.</p>
-          <form class="login-form" action="#" method="get">
+          <form class="login-form" id="login-form">
             <label for="user-id">User ID</label>
             <input
               id="user-id"
               name="userId"
               type="text"
+              inputmode="numeric"
+              pattern="[0-9]{6}"
+              maxlength="6"
               autocomplete="username"
-              placeholder="Enter your user ID"
+              placeholder="6-digit user ID"
               required
             />
-            <button class="login-submit" type="submit">Continue</button>
+            <button class="login-submit" id="login-submit" type="submit">Continue</button>
+            <p class="form-error" id="login-error" role="alert" hidden></p>
           </form>
         </section>
       </main>

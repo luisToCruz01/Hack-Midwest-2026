@@ -8,15 +8,17 @@ Setup
      starts against an empty database (it creates all tables and the 6,000 employees).
   3. Set DATABASE_URL to your Postgres connection string (on Render: the Internal URL
      in the service's Environment settings; on your computer: the External URL).
-  4. python server.py
-  5. Your names load from schema_postgres.sql. Attach email/phone with load_contacts.py (CSV) or
+  4. Set MANAGER_IDS to the user IDs allowed to use manager features (comma separated).
+  5. python server.py
+  6. Load real facility coordinates with load_geo.py (facilities without coordinates are skipped
+     by the background scan). Attach email/phone with load_contacts.py (CSV) or
      POST /api/admin/employees/contacts. Add new people with /api/admin/employees/import.
 
 Two notification paths
   Facility path  NWS alerts at a facility -> graded recommendation (pending) -> a manager
                  approves or overrides -> everyone scheduled at that facility is notified.
                  Recommendations are created on demand AND by a background scan
-                 (AUTO_SCAN_MINUTES, default 10). With AUTO_DECIDE on (the default) the scan
+                 (AUTO_SCAN_MINUTES, default 10). With AUTO_DECIDE on (default OFF) the scan
                  sends notifications by itself when confidence is at least AUTO_DECIDE_MIN_CONFIDENCE;
                  lower-confidence ones wait as PENDING for a manager.
                  When the NWS stays quiet for ALL_CLEAR_HOLD_MINUTES after a notice, the same
@@ -28,21 +30,24 @@ Two notification paths
 
 Who can do what
   Any logged-in employee: own profile, location sharing, own notifications and shelters.
-  Managers (MANAGER_IDS env var, comma separated): recommendations, decisions,
+  Managers (MANAGER_IDS env var, comma separated): employee roster, recommendations, decisions,
   decision log, facility settings, snapshots, employee import.
 
-Environment (all optional)
+Environment (all optional except DATABASE_URL and, for manager features, MANAGER_IDS)
   DATABASE_URL (required), DB_POOL_MAX, HOST, PORT (Render sets PORT), SCHEMA_FILE,
-  MANAGER_IDS, NWS_USER_AGENT, CELL_DEG, AUTO_SCAN_MINUTES (0 turns the scan off),
-  AUTO_DECIDE (on/off), AUTO_DECIDE_MIN_CONFIDENCE (low/medium/high),
+  MANAGER_IDS, SESSION_HOURS, NWS_USER_AGENT, CELL_DEG, AUTO_SCAN_MINUTES (0 turns the scan off),
+  AUTO_DECIDE (on/off, default off), AUTO_DECIDE_MIN_CONFIDENCE (low/medium/high),
   ALL_CLEAR (on/off), ALL_CLEAR_HOLD_MINUTES, SNAPSHOT_RETENTION_DAYS,
   API_MIN_INTERVAL_SECONDS, MIN_LOCATION_INTERVAL_SECONDS,
-  NOTIFY_WEBHOOK_URL, NOTIFY_WEBHOOK_TOKEN
+  NOTIFY_WEBHOOK_URL, NOTIFY_WEBHOOK_TOKEN,
+  DEMO_GEO (on = seed made-up facility coordinates, testing only),
+  DEMO_FLAGS (on = seed two demo essential/no-telework employees, testing only)
 
 Routes
   GET  /api/health
   POST /api/login                          {"userId": "482917"}
   GET  /api/me
+  GET  /api/employees                      (manager) roster for the dashboard
   GET  /api/locations/<id>                 PUT (manager): {"lat":..,"lon":..,"tz":"America/Chicago"}
   GET  /api/alerts?lat=..&lon=..
   GET  /api/shelters?lat=..&lon=..
@@ -102,9 +107,17 @@ PORT = int(os.environ.get("PORT", "3000"))
 MAX_REQUEST_BYTES = 16_384
 IMPORT_MAX_BYTES = 5_000_000
 
-# Demo managers. Replace with a real role column or identity provider.
-# Whitespace around the commas is ignored ("482917, 305764" works).
-MANAGER_IDS = {i.strip() for i in os.environ.get("MANAGER_IDS", "482917,305764").split(",") if i.strip()}
+
+def env_on(name, default="off"):
+    return os.environ.get(name, default).strip().lower() in ("on", "1", "true", "yes")
+
+
+# Managers are set only through the environment. Whitespace around the commas is ignored.
+MANAGER_IDS = {i.strip() for i in os.environ.get("MANAGER_IDS", "").split(",") if i.strip()}
+if not MANAGER_IDS:
+    print("WARNING: MANAGER_IDS is not set, so nobody can use the manager features.")
+
+SESSION_HOURS = int(os.environ.get("SESSION_HOURS", "12"))
 
 # NWS asks every client to identify itself. Change the email.
 NWS_ALERTS_URL = "https://api.weather.gov/alerts/active"
@@ -129,15 +142,16 @@ SNAPSHOT_RETENTION_DAYS = int(os.environ.get("SNAPSHOT_RETENTION_DAYS", "30"))
 
 AUTO_SCAN_MINUTES = int(os.environ.get("AUTO_SCAN_MINUTES", "10"))
 # When on, the background scan sends facility notifications by itself, with no manager step.
+# Default is OFF: review the rules first, then switch it on with AUTO_DECIDE=on.
 # Only recommendations at or above the confidence below are sent automatically (high = alert
 # Observed, medium = Likely, low = Possible). Anything lower waits for a manager.
-AUTO_DECIDE = os.environ.get("AUTO_DECIDE", "on").strip().lower() in ("on", "1", "true", "yes")
+AUTO_DECIDE = env_on("AUTO_DECIDE", "off")
 AUTO_DECIDE_MIN_CONFIDENCE = os.environ.get("AUTO_DECIDE_MIN_CONFIDENCE", "medium").strip().lower()
 CONFIDENCE_RANK = {"low": 0, "medium": 1, "high": 2}
 AUTO_SCAN_REPEAT_HOURS = 6    # don't re-recommend the same posture for a facility sooner than this
 
 # All-clear: after a notice, the NWS must stay quiet this long before "normal operations may resume" goes out.
-ALL_CLEAR = os.environ.get("ALL_CLEAR", "on").strip().lower() in ("on", "1", "true", "yes")
+ALL_CLEAR = env_on("ALL_CLEAR", "on")
 ALL_CLEAR_HOLD_MINUTES = int(os.environ.get("ALL_CLEAR_HOLD_MINUTES", "20"))
 
 # Where real push/SMS/email delivery happens. If unset, notifications are only recorded
@@ -229,7 +243,8 @@ ALTER TABLE recommendations ADD COLUMN IF NOT EXISTS cleared_at TEXT;
 ALTER TABLE recommendations ADD COLUMN IF NOT EXISTS clear_seen_at TEXT;
 """
 
-# Synthetic coordinates so every facility can be tested. Replace with real ones.
+# Synthetic coordinates, used ONLY when DEMO_GEO=on (testing). Real deployments load real
+# coordinates with load_geo.py.
 DEMO_CITIES = [
     ("Des Moines", 41.5868, -93.6250, "America/Chicago"),
     ("Kansas City", 39.0997, -94.5786, "America/Chicago"),
@@ -252,7 +267,7 @@ DEMO_CITIES = [
     ("Buffalo", 42.8864, -78.8784, "America/New_York"),
     ("Albany", 42.6526, -73.7562, "America/New_York"),
 ]
-# Demo flags for facility 1 only. Replace with real HR data.
+# Demo flags for facility 1 only (used only when DEMO_FLAGS=on). Replace with real HR data.
 DEMO_ESSENTIAL_IDS = ("482917", "305764")
 DEMO_NO_TELEWORK_IDS = ("926541",)
 
@@ -332,7 +347,8 @@ def init_db():
             conn.script(SCHEMA_FILE.read_text(encoding="utf-8"))
         conn.script(APP_SCHEMA)
 
-        if conn.execute("SELECT COUNT(*) FROM location_geo").fetchone()[0] == 0:
+        # Made-up coordinates are only for testing. Real ones come from load_geo.py.
+        if env_on("DEMO_GEO") and conn.execute("SELECT COUNT(*) FROM location_geo").fetchone()[0] == 0:
             for (location_id,) in conn.execute("SELECT location_id FROM locations ORDER BY location_id").fetchall():
                 city, lat, lon, tz = DEMO_CITIES[(location_id - 1) % len(DEMO_CITIES)]
                 shift = ((location_id - 1) // len(DEMO_CITIES)) * 0.05
@@ -341,7 +357,7 @@ def init_db():
                     (location_id, round(lat + shift, 4), round(lon + shift, 4), tz),
                 )
 
-        if conn.execute("SELECT COUNT(*) FROM employee_flags").fetchone()[0] == 0:
+        if env_on("DEMO_FLAGS") and conn.execute("SELECT COUNT(*) FROM employee_flags").fetchone()[0] == 0:
             for user_id in DEMO_ESSENTIAL_IDS:
                 conn.execute("INSERT INTO employee_flags (user_id, is_essential) "
                              "SELECT user_id, 1 FROM employees WHERE user_id = ? "
@@ -465,7 +481,7 @@ def upsert_employees(records):
 def update_contacts(records):
     """Set email, phone and the essential/telework flags for people already in the employees table.
 
-    Your names are already loaded from schema.sql; this is how email/phone get attached so the
+    Your names are already loaded from the schema; this is how email/phone get attached so the
     sms and email channels have somewhere to go. Missing fields are left unchanged.
     """
     summary = {"received": len(records), "updated": 0, "rejected": []}
@@ -714,7 +730,7 @@ def fetch_shelters(lat, lon, radius_miles=50, limit=3):
 # ======================================================================
 
 def prune_caches():
-    """Drop expired cache entries, idle per-cell locks and old rate-limit marks."""
+    """Drop expired cache entries, idle per-cell locks, old rate-limit marks and expired sessions."""
     now = monotonic()
     with alert_cache_lock:
         for k in [k for k, v in alert_cache.items() if now - v["at"] > ALERT_CACHE_SECONDS]:
@@ -727,6 +743,9 @@ def prune_caches():
     with rate_lock:
         for k in [k for k, t in rate_marks.items() if now - t > 3600]:
             del rate_marks[k]
+    with sessions_lock:
+        for k in [k for k, (_user, expires) in sessions.items() if expires < now]:
+            del sessions[k]
 
 
 def purge_old_snapshots():
@@ -744,7 +763,7 @@ def purge_old_snapshots():
 # Rules engine (pure: same inputs always give the same output)
 # ======================================================================
 
-RULES_VERSION = "2026-10-10-draft1"
+RULES_VERSION = "2026-10-10-draft2"
 POSTURE_ORDER = ["normal", "delay", "early_dismissal", "telework", "closure"]
 POSTURE_RANK = {p: i for i, p in enumerate(POSTURE_ORDER)}
 POSTURE_LABEL = {
@@ -766,7 +785,8 @@ RULES = [
      "urgency": ACT_NOW_URGENCY, "certainty": LIKELY_CERTAINTY, "anchor": ANCHOR_TODO},
     {"id": "R3", "posture": "early_dismissal", "severity": {"Severe", "Extreme"},
      "urgency": {"Future"}, "certainty": LIKELY_CERTAINTY, "anchor": ANCHOR_TODO},
-    {"id": "R4", "posture": "delay", "severity": {"Moderate", "Severe", "Extreme"},
+    # R4 no longer matches Moderate alerts (routine heat advisories, fog and the like).
+    {"id": "R4", "posture": "delay", "severity": {"Severe", "Extreme"},
      "urgency": {"Immediate", "Expected", "Future"},
      "certainty": {"Observed", "Likely", "Possible"}, "anchor": ANCHOR_TODO},
 ]
@@ -818,7 +838,7 @@ def evaluate(facility_name, snapshot_meta, alerts):
         below = f" ({len(alerts)} active alert(s) fall below every threshold)" if alerts else ""
         rationale = (f"As of {fetched}, the NWS reports no active alerts at {facility_name} "
                      f"that meet any closure threshold{below}. Recommended posture: normal operations.")
-        changes.append("Any new alert with severity Moderate or higher would trigger rule R4 (delay) or above.")
+        changes.append("Any new alert with severity Severe or higher would trigger rule R4 (delay) or above.")
         threshold = None
         headline = None
     else:
@@ -1316,7 +1336,10 @@ SCAN_LOCK_KEY = 7002
 
 
 def scan_facilities():
-    """Check every facility once. With AUTO_DECIDE on, notifications go out without a manager step."""
+    """Check every facility once. With AUTO_DECIDE on, notifications go out without a manager step.
+
+    Facilities with no coordinates (nothing in location_geo) are skipped.
+    """
     with get_db() as conn:
         ids = [r[0] for r in conn.execute("SELECT location_id FROM location_geo ORDER BY location_id")]
     created = 0
@@ -1375,6 +1398,7 @@ ROUTES = [(m, re.compile(p), name, access) for m, p, name, access in [
     ("GET", r"/api/health", "h_health", "public"),
     ("POST", r"/api/login", "h_login", "public"),
     ("GET", r"/api/me", "h_me", "auth"),
+    ("GET", r"/api/employees", "h_employees_list", "manager"),
     ("GET", r"/api/locations/(\d+)", "h_location_get", "auth"),
     ("PUT", r"/api/locations/(\d+)", "h_location_put", "manager"),
     ("GET", r"/api/alerts", "h_alerts", "auth"),
@@ -1397,7 +1421,7 @@ ROUTES = [(m, re.compile(p), name, access) for m, p, name, access in [
     ("POST", r"/api/entries", "h_entries_create", "auth"),
 ]]
 
-sessions = {}  # token -> user_id
+sessions = {}  # token -> (user_id, expires at monotonic time). In memory: a restart logs everyone out.
 sessions_lock = Lock()
 
 
@@ -1448,6 +1472,11 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
                         "delivery": "webhook" if NOTIFY_WEBHOOK_URL else "simulated"})
 
     def h_login(self, employee, query):
+        client = (self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+                  or self.client_address[0])
+        if too_fast(client, "login", 2):
+            self.send_json({"error": "Too many attempts. Wait a moment and try again."}, status=429)
+            return
         payload = self.read_json_object()
         if payload is None:
             return
@@ -1460,7 +1489,7 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
             return
         token = secrets.token_urlsafe(24)
         with sessions_lock:
-            sessions[token] = row["user_id"]
+            sessions[token] = (row["user_id"], monotonic() + SESSION_HOURS * 3600)
         self.send_json({"token": token, "userId": row["user_id"], "name": row["full_name"],
                         "isManager": row["user_id"] in MANAGER_IDS})
 
@@ -1477,6 +1506,23 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
                         "shiftEnd": row["shift_end"], "daysOfWeek": row["days_of_week"],
                         "locationSharing": bool(row["consent"]),
                         "isManager": row["user_id"] in MANAGER_IDS})
+
+    # ----- roster (dashboard) -----
+    def h_employees_list(self, employee, query):
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT e.user_id, e.full_name, e.shift_start, e.shift_end, e.days_of_week, "
+                "e.location_id, l.name AS location_name, l.address AS location_address, g.tz "
+                "FROM employees e JOIN locations l ON l.location_id = e.location_id "
+                "LEFT JOIN location_geo g ON g.location_id = e.location_id "
+                "ORDER BY lower(e.full_name), e.user_id").fetchall()
+        self.send_json([{
+            "userId": r["user_id"], "fullName": r["full_name"],
+            "shiftStart": r["shift_start"], "shiftEnd": r["shift_end"],
+            "daysOfWeek": r["days_of_week"], "locationId": r["location_id"],
+            "locationName": r["location_name"], "locationAddress": r["location_address"],
+            "locationTimezone": r["tz"],
+        } for r in rows])
 
     # ----- facilities -----
     def h_location_get(self, employee, query, location_id):
@@ -1626,7 +1672,7 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
             return
         loc = load_location(payload.get("locationId") if isinstance(payload.get("locationId"), int) else -1)
         if loc is None:
-            self.send_json({"error": "Unknown locationId."}, status=404)
+            self.send_json({"error": "Unknown locationId, or that facility has no coordinates yet."}, status=404)
             return
         rec_id, rec, package = create_recommendation(loc, employee["user_id"])
         self.send_json({"id": rec_id, "status": "pending", "recommendation": rec, "package": package}, status=201)
@@ -1770,9 +1816,13 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
         header = self.headers.get("Authorization", "")
         if not header.startswith("Bearer "):
             return None
+        token = header[len("Bearer "):]
         with sessions_lock:
-            user_id = sessions.get(header[len("Bearer "):])
-        return {"user_id": user_id} if user_id else None
+            entry = sessions.get(token)
+            if entry and entry[1] < monotonic():
+                del sessions[token]
+                entry = None
+        return {"user_id": entry[0]} if entry else None
 
     def read_json_object(self, max_bytes=MAX_REQUEST_BYTES):
         """Read a JSON object body. Sends the error itself and returns None on failure."""

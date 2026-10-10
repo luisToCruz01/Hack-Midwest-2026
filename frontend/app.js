@@ -1,3 +1,6 @@
+const authToken = sessionStorage.getItem("fieldcastToken");
+if (!authToken) window.location.replace("./login.html");
+
 const navigationButtons = document.querySelectorAll("[data-page]");
 const pageViews = document.querySelectorAll("[data-view]");
 const employeeRows = document.querySelector("#employee-rows");
@@ -17,14 +20,14 @@ let alerts = [
 ];
 
 let workSite = {
-  name: "USDA Forest Service",
-  address: "1400 Independence Ave., SW",
-  city: "Washington, D.C.",
-  state: "",
-  postalCode: "20250-0003",
+  name: "Allen County USDA Service Center (KS)",
+  address: "202 W Miller Road",
+  city: "Iola",
+  state: "KS",
+  postalCode: "66749",
   timezone: "America/Chicago",
-  latitude: "39.1141",
-  longitude: "-94.5786",
+  latitude: "",
+  longitude: "",
 };
 
 let nextAlertId = 4;
@@ -73,6 +76,7 @@ function mapDatabaseEmployee(employee) {
   return {
     id: employee.userId,
     name: employee.fullName,
+    timezone: employee.locationTimezone || workSite.timezone,
     schedule: {
       days: expandDaysOfWeek(employee.daysOfWeek),
       startTime: employee.shiftStart,
@@ -81,18 +85,25 @@ function mapDatabaseEmployee(employee) {
   };
 }
 
-function getWorkSiteClock(date) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: workSite.timezone || undefined,
-    weekday: "short",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(date);
-  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+const clockFormatters = new Map();
+
+function getWorkSiteClock(date, timeZone = workSite.timezone) {
+  const key = timeZone || "";
+  let formatter = clockFormatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: timeZone || undefined,
+      weekday: "short",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    });
+    clockFormatters.set(key, formatter);
+  }
+  const values = Object.fromEntries(formatter.formatToParts(date).map(({ type, value }) => [type, value]));
 
   return {
     date: `${values.year}-${values.month}-${values.day}`,
@@ -102,7 +113,7 @@ function getWorkSiteClock(date) {
 }
 
 function getEmployeeStatus(employee, now = new Date()) {
-  const clock = getWorkSiteClock(now);
+  const clock = getWorkSiteClock(now, employee.timezone);
 
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const todayIndex = dayNames.indexOf(clock.weekday);
@@ -229,9 +240,15 @@ function renderEmployees() {
   emptyMessage.textContent = employeesLoading
     ? "Loading employees..."
     : employeeLoadError || "No employees match your search.";
-  emptyMessage.hidden = filteredEmployees.length > 0;
+  const ROW_LIMIT = 200;
+  if (filteredEmployees.length > ROW_LIMIT) {
+    emptyMessage.textContent = `Showing the first ${ROW_LIMIT} of ${filteredEmployees.length} employees. Search to narrow the list.`;
+    emptyMessage.hidden = false;
+  } else {
+    emptyMessage.hidden = filteredEmployees.length > 0;
+  }
 
-  for (const employee of filteredEmployees) {
+  for (const employee of filteredEmployees.slice(0, ROW_LIMIT)) {
     const row = document.createElement("tr");
     const personCell = document.createElement("td");
     const person = document.createElement("div");
@@ -382,10 +399,6 @@ alertForm.addEventListener("submit", (event) => {
   });
   alertDialog.close();
   renderAll();
-  window.setInterval(() => {
-    renderOverview();
-    renderEmployees();
-  }, 60_000);
 });
 
 const worksiteForm = document.querySelector("#worksite-form");
@@ -428,18 +441,35 @@ loadEmployees();
 
 async function loadEmployees() {
   try {
-    const response = await fetch("/api/employees");
+    const response = await fetch("/api/employees", {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    if (response.status === 401) {
+      sessionStorage.removeItem("fieldcastToken");
+      window.location.replace("./login.html");
+      return;
+    }
+    if (response.status === 403) throw new Error("Your account is not a manager account.");
     if (!response.ok) throw new Error(`Employee API returned HTTP ${response.status}.`);
     const records = await response.json();
     if (!Array.isArray(records)) throw new Error("Employee API response must be an array.");
 
     employees = records.map(mapDatabaseEmployee);
-    employeesLoading = false;
-    renderAll();
+    employeeLoadError = "";
   } catch (error) {
-    employeesLoading = false;
-    employeeLoadError = "Unable to load employees from the database. Check that the dashboard server and database are available.";
+    employeeLoadError = error.message || "Unable to load employees from the database.";
     console.error("Failed to load employees from the database.", error);
-    renderAll();
   }
+  employeesLoading = false;
+  renderAll();
 }
+
+window.setInterval(() => {
+  renderOverview();
+  renderEmployees();
+}, 60_000);
+
+document.querySelector("#logout-link").addEventListener("click", () => {
+  sessionStorage.removeItem("fieldcastToken");
+  sessionStorage.removeItem("fieldcastUser");
+});

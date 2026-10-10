@@ -1070,3 +1070,71 @@ tbody tr:last-child td {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Login page */
+.login-content {
+  display: grid;
+  min-height: calc(100vh - 134px);
+  place-items: center;
+  padding: 2.5rem 1rem;
+}
+
+.login-card {
+  width: min(100%, 420px);
+  padding: 2rem;
+}
+
+.login-card h1 {
+  font-size: 2rem;
+}
+
+.login-form {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 1.5rem;
+}
+
+.login-form label {
+  color: #b8cbc6;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.login-form input {
+  min-height: 44px;
+  padding: 0 0.75rem;
+  border: 1px solid #28515c;
+  border-radius: 8px;
+  color: #dce9e5;
+  background: #081e27;
+}
+
+.login-form input:focus {
+  border-color: var(--blue);
+  outline: 3px solid rgb(118 184 245 / 16%);
+}
+
+.login-submit {
+  min-height: 44px;
+  margin-top: 0.5rem;
+  border: 1px solid rgb(80 215 160 / 42%);
+  border-radius: 8px;
+  color: #c2ffe2;
+  background: linear-gradient(120deg, #14543f, #0e493f);
+  font-weight: 650;
+}
+
+.login-submit:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.form-error {
+  margin: 0.25rem 0 0;
+  color: #ffaaaa;
+  font-size: 0.78rem;
+}
+
+.form-error[hidden] {
+  display: none;
+}
