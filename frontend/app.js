@@ -82,7 +82,15 @@ function getWeatherMap() {
     throw new Error("The weather map library could not be loaded. Check your internet connection.");
   }
   if (!weatherMap) {
-    weatherMap = window.L.map(mapElement).setView([39.8283, -98.5795], 4);
+    weatherMap = window.L.map(mapElement, {
+      boxZoom: false,
+      doubleClickZoom: false,
+      dragging: false,
+      keyboard: false,
+      scrollWheelZoom: false,
+      touchZoom: false,
+      zoomControl: false,
+    }).setView([39.8283, -98.5795], 4);
     window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 18,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
@@ -191,7 +199,7 @@ function renderWeatherMap(data) {
     }).addTo(weatherMapLayers).bindPopup(makeAlertPopup(alert));
   }
 
-  map.setView([latitude, longitude], 9);
+  map.setView([latitude, longitude], 11);
   window.requestAnimationFrame(() => map.invalidateSize());
 }
 
