@@ -8,7 +8,19 @@
       content="Fieldcast administrator dashboard for employees, alerts, and work site details."
     />
     <title>Admin Dashboard | Fieldcast</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
     <link rel="stylesheet" href="./styles.css" />
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+      defer
+    ></script>
     <script src="./app.js" defer></script>
   </head>
   <body>
@@ -54,11 +66,6 @@
               <p class="metric-note">Require administrator attention</p>
             </article>
             <article class="metric-card">
-              <div class="card-label"><span class="card-icon icon-blue" aria-hidden="true">⌖</span> Work site</div>
-              <p class="metric-value metric-value-small" id="site-city-summary">Not configured</p>
-              <p class="metric-note" id="site-address-summary">Add your work site details</p>
-            </article>
-            <article class="metric-card">
               <div class="card-label"><span class="card-icon icon-blue" aria-hidden="true">☼</span> Weather feed</div>
               <p class="metric-value metric-value-small">Not connected</p>
               <p class="metric-note">Weather provider setup required</p>
@@ -84,10 +91,35 @@
                 </div>
                 <button class="text-button" type="button" data-open-page="worksite">Edit</button>
               </div>
+              <label class="filter-field overview-location-picker">
+                <span class="visually-hidden">Choose a work site location</span>
+                <select id="overview-location-select" disabled>
+                  <option value="">Loading locations...</option>
+                </select>
+              </label>
               <div class="site-address-summary" id="overview-site-address"></div>
               <dl class="site-details" id="overview-site-details"></dl>
             </section>
           </div>
+          <section class="content-card overview-map-card" aria-labelledby="overview-map-title">
+            <div class="card-heading">
+              <div>
+                <p class="eyebrow">LIVE NATIONAL WEATHER SERVICE</p>
+                <h2 id="overview-map-title">Selected site conditions</h2>
+              </div>
+            </div>
+            <p class="weather-map-location" id="weather-map-location">Choose a work site to view its local weather.</p>
+            <p class="weather-map-status" id="weather-map-status" role="status" aria-live="polite">Waiting for a selected location.</p>
+            <div id="weather-summary" class="weather-summary" aria-live="polite"></div>
+            <div class="overview-map-frame">
+              <div id="weather-map" role="region" aria-label="Map with selected site NWS weather and active alert overlays"></div>
+            </div>
+            <div class="weather-map-legend" aria-label="Map legend">
+              <span><i class="legend-site" aria-hidden="true"></i> Selected site</span>
+              <span><i class="legend-alert" aria-hidden="true"></i> Active NWS alert area</span>
+              <span>Wind arrow points toward wind travel direction</span>
+            </div>
+          </section>
           <p class="prototype-note">Dashboard prototype · Alerts and work-site edits are temporary; the employee roster comes from the database.</p>
         </section>
 
@@ -106,19 +138,27 @@
                 <span aria-hidden="true">⌕</span>
                 <input id="employee-search" type="search" placeholder="Search name or user ID" />
               </label>
-              <label class="filter-field">
-                <span class="visually-hidden">Filter employees by status</span>
-                <select id="employee-filter">
-                  <option value="all">All employees</option>
-                  <option value="Working">Working</option>
-                  <option value="Off shift">Off shift</option>
-                </select>
-              </label>
+              <div class="employee-filters">
+                <label class="filter-field">
+                  <span class="visually-hidden">Filter employees by status</span>
+                  <select id="employee-filter">
+                    <option value="all">All statuses</option>
+                    <option value="Working">Working</option>
+                    <option value="Off shift">Off shift</option>
+                  </select>
+                </label>
+                <label class="filter-field">
+                  <span class="visually-hidden">Filter employees by location</span>
+                  <select id="employee-location-filter">
+                    <option value="all">All locations</option>
+                  </select>
+                </label>
+              </div>
             </div>
             <div class="table-scroll">
               <table>
                 <thead>
-                  <tr><th scope="col">Employee</th><th scope="col">Schedule</th><th scope="col">Status</th></tr>
+                  <tr><th scope="col">Employee</th><th scope="col">Schedule</th><th scope="col">Status</th><th scope="col">Location</th></tr>
                 </thead>
                 <tbody id="employee-rows"></tbody>
               </table>

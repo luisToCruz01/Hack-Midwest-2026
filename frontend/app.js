@@ -3,12 +3,19 @@ const pageViews = document.querySelectorAll("[data-view]");
 const employeeRows = document.querySelector("#employee-rows");
 const employeeSearch = document.querySelector("#employee-search");
 const employeeFilter = document.querySelector("#employee-filter");
+const employeeLocationFilter = document.querySelector("#employee-location-filter");
+const overviewLocationSelect = document.querySelector("#overview-location-select");
 const alertDialog = document.querySelector("#alert-dialog");
 const alertForm = document.querySelector("#alert-form");
 
 let employees = [];
+let locations = [];
+let selectedLocationId = "";
 let employeesLoading = true;
 let employeeLoadError = "";
+let weatherMap;
+let weatherMapLayers;
+let weatherRequestId = 0;
 
 let alerts = [
   { id: 1, title: "Heat advisory in effect", message: "High temperatures are expected this afternoon. Ensure crews take scheduled water breaks and monitor for signs of heat stress.", severity: "High", status: "Open", time: "Today, 9:42 AM", location: "North work area" },
@@ -69,11 +76,214 @@ function expandDaysOfWeek(range) {
   }
 }
 
+function getWeatherMap() {
+  const mapElement = document.querySelector("#weather-map");
+  if (!window.L) {
+    throw new Error("The weather map library could not be loaded. Check your internet connection.");
+  }
+  if (!weatherMap) {
+    weatherMap = window.L.map(mapElement).setView([39.8283, -98.5795], 4);
+    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 18,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
+    }).addTo(weatherMap);
+    weatherMapLayers = window.L.layerGroup().addTo(weatherMap);
+  }
+  return weatherMap;
+}
+
+function setWeatherStatus(message, error = false) {
+  const status = document.querySelector("#weather-map-status");
+  status.textContent = message;
+  status.classList.toggle("weather-map-status-error", error);
+}
+
+function addWeatherMetric(label, value, className = "") {
+  const card = document.createElement("div");
+  const name = document.createElement("span");
+  const reading = document.createElement("strong");
+  card.className = `weather-metric${className ? ` ${className}` : ""}`;
+  name.textContent = label;
+  reading.textContent = value;
+  card.append(name, reading);
+  document.querySelector("#weather-summary").append(card);
+}
+
+function compassBearing(direction) {
+  const directions = {
+    N: 0, NNE: 22.5, NE: 45, ENE: 67.5, E: 90, ESE: 112.5, SE: 135, SSE: 157.5,
+    S: 180, SSW: 202.5, SW: 225, WSW: 247.5, W: 270, WNW: 292.5, NW: 315, NNW: 337.5,
+  };
+  return Object.hasOwn(directions, direction) ? directions[direction] : null;
+}
+
+function makeAlertPopup(alert) {
+  const content = document.createElement("div");
+  const title = document.createElement("strong");
+  const headline = document.createElement("p");
+  const severity = document.createElement("span");
+  title.textContent = alert.event || "NWS alert";
+  headline.textContent = alert.headline || "Active alert for this area.";
+  severity.textContent = `Severity: ${alert.severity || "Unknown"}`;
+  content.className = "weather-popup";
+  content.append(title, headline, severity);
+  return content;
+}
+
+function renderWeatherMap(data) {
+  const map = getWeatherMap();
+  const { latitude, longitude } = data.coordinates;
+  const forecast = data.forecast;
+  const chance = typeof forecast.probabilityOfPrecipitation === "number"
+    ? forecast.probabilityOfPrecipitation
+    : Number.NaN;
+  const windBearing = compassBearing(forecast.windDirection);
+  const layers = window.L;
+  weatherMapLayers.clearLayers();
+
+  if (windBearing !== null) {
+    const markerContent = document.createElement("div");
+    const windArrow = document.createElement("span");
+    const rainChance = document.createElement("span");
+    markerContent.className = "weather-map-marker";
+    windArrow.className = "weather-map-wind-arrow";
+    windArrow.textContent = "↑";
+    windArrow.style.transform = `rotate(${(windBearing + 180) % 360}deg)`;
+    rainChance.className = "weather-map-rain";
+    rainChance.textContent = Number.isFinite(chance) ? `☂ ${chance}%` : "☂ Rain n/a";
+    markerContent.append(windArrow, rainChance);
+    const icon = layers.divIcon({
+      className: "weather-map-marker-wrap",
+      html: markerContent,
+      iconSize: [110, 54],
+      iconAnchor: [55, 27],
+    });
+    const marker = layers.marker([latitude, longitude], { icon }).addTo(weatherMapLayers);
+    const popup = document.createElement("div");
+    const title = document.createElement("strong");
+    const conditions = document.createElement("p");
+    const wind = document.createElement("p");
+    const rain = document.createElement("p");
+    title.textContent = data.location.name;
+    conditions.textContent = forecast.shortForecast || "NWS hourly forecast";
+    wind.textContent = `Wind: ${forecast.windSpeed || "Not reported"}${forecast.windDirection ? ` from ${forecast.windDirection}` : ""}`;
+    rain.textContent = `Precipitation chance: ${Number.isFinite(chance) ? `${chance}%` : "Not reported"}`;
+    popup.className = "weather-popup";
+    popup.append(title, conditions, wind, rain);
+    marker.bindPopup(popup).openPopup();
+  } else {
+    layers.circleMarker([latitude, longitude], {
+      radius: 9,
+      color: "#fff",
+      weight: 2,
+      fillColor: "#42b6ff",
+      fillOpacity: 1,
+    }).addTo(weatherMapLayers).bindPopup(data.location.name);
+  }
+
+  for (const alert of data.alerts) {
+    if (!alert.geometry) continue;
+    const color = alert.severity === "Extreme" || alert.severity === "Severe"
+      ? "#ef5961"
+      : alert.severity === "Moderate" ? "#f5b94d" : "#58b6ff";
+    layers.geoJSON(alert.geometry, {
+      style: { color, weight: 2, fillColor: color, fillOpacity: 0.2 },
+    }).addTo(weatherMapLayers).bindPopup(makeAlertPopup(alert));
+  }
+
+  map.setView([latitude, longitude], 9);
+  window.requestAnimationFrame(() => map.invalidateSize());
+}
+
+async function loadSelectedLocationWeather(keepMapView = false) {
+  const requestId = ++weatherRequestId;
+  const selectedLocation = locations.find((location) => location.id === selectedLocationId);
+  const summary = document.querySelector("#weather-summary");
+  summary.replaceChildren();
+  if (!selectedLocation) {
+    document.querySelector("#weather-map-location").textContent = "Choose a work site to view its local weather.";
+    setWeatherStatus("Waiting for a selected location.");
+    return;
+  }
+
+  document.querySelector("#weather-map-location").textContent =
+    [selectedLocation.name, selectedLocation.address].filter(Boolean).join(" · ");
+  setWeatherStatus("Loading the selected site's location and live NWS conditions...");
+
+  try {
+    const map = getWeatherMap();
+    weatherMapLayers.clearLayers();
+    if (!keepMapView) map.setView([39.8283, -98.5795], 4);
+    const response = await fetch(`/api/weather?locationId=${encodeURIComponent(selectedLocation.id)}`);
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `Weather API returned HTTP ${response.status}.`);
+    if (requestId !== weatherRequestId) return;
+
+    const forecast = result.forecast;
+    addWeatherMetric("NWS hourly forecast", forecast.shortForecast || "Not reported");
+    addWeatherMetric(
+      "Temperature",
+      forecast.temperature === null || forecast.temperature === undefined
+        ? "Not reported"
+        : `${forecast.temperature}°${forecast.temperatureUnit || "F"}`,
+    );
+    addWeatherMetric(
+      "Wind",
+      `${forecast.windSpeed || "Not reported"}${forecast.windDirection ? ` from ${forecast.windDirection}` : ""}`,
+    );
+    const precipitationChance = typeof forecast.probabilityOfPrecipitation === "number"
+      ? forecast.probabilityOfPrecipitation
+      : Number.NaN;
+    addWeatherMetric(
+      "Precipitation chance",
+      Number.isFinite(precipitationChance) ? `${precipitationChance}%` : "Not reported",
+      "weather-metric-rain",
+    );
+    addWeatherMetric(
+      "Humidity",
+      forecast.relativeHumidity === null || forecast.relativeHumidity === undefined
+        ? "Not reported"
+        : `${forecast.relativeHumidity}%`,
+    );
+    renderWeatherMap(result);
+
+    const forecastStart = forecast.startTime
+      ? new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(forecast.startTime))
+      : "the next forecast period";
+    const alertCount = result.alerts.length;
+    const alertStatus = result.alertsError
+      ? result.alertsError
+      : alertCount ? `${alertCount} active alert${alertCount === 1 ? "" : "s"} shown on the map.` : "No active NWS alerts for this point.";
+    const checkedAt = result.updatedAt
+      ? new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date(result.updatedAt))
+      : null;
+    const locationPrecision = result.location.geocodePrecision === "locality"
+      ? "Exact street address was not found; weather is for the nearby locality."
+      : result.location.geocodePrecision === "configured-site" && selectedLocation.address
+        ? "The address could not be geocoded; weather is using the stored work-site coordinates."
+      : null;
+    setWeatherStatus(
+      `NWS hourly forecast for ${forecastStart}${checkedAt ? ` · checked at ${checkedAt}` : ""}.${locationPrecision ? ` ${locationPrecision}` : ""} ${alertStatus}`,
+      Boolean(result.alertsError),
+    );
+  } catch (error) {
+    if (requestId !== weatherRequestId) return;
+    setWeatherStatus(
+      error instanceof Error ? error.message : "Unable to load weather for this work site.",
+      true,
+    );
+    console.error("Failed to load NWS weather for the selected work site.", error);
+  }
+}
+
 function mapDatabaseEmployee(employee) {
   return {
     id: employee.userId,
     name: employee.fullName,
     phoneNumber: employee.phoneNumber,
+    locationId: String(employee.locationId),
+    locationName: employee.locationName,
+    locationAddress: employee.locationAddress,
     schedule: {
       days: expandDaysOfWeek(employee.daysOfWeek),
       startTime: employee.shiftStart,
@@ -143,32 +353,33 @@ function setPage(selectedPage) {
 function renderOverview() {
   const workingEmployees = employees.filter((employee) => getEmployeeStatus(employee) === "Working").length;
   const openAlerts = alerts.filter((alert) => alert.status !== "Resolved").length;
-  const addressParts = [workSite.city, workSite.state, workSite.postalCode].filter(Boolean);
-  const streetAddress = workSite.address || "Address not set";
-  const fullAddress = [streetAddress, addressParts.join(" ")].filter(Boolean).join("\n");
+  const selectedLocation = locations.find((location) => location.id === selectedLocationId);
+  const siteName = selectedLocation?.name || workSite.name || "Work site not set";
+  const siteAddress = selectedLocation
+    ? selectedLocation.address
+      || (selectedLocation.latitude !== null && selectedLocation.longitude !== null
+        ? `Coordinates: ${selectedLocation.latitude}, ${selectedLocation.longitude}`
+        : "Coordinates not configured")
+    : workSite.address || "Address not set";
 
   document.querySelector("#employee-count").textContent = String(employees.length);
   document.querySelector("#active-employee-note").textContent = `${workingEmployees} working now · ${employees.length - workingEmployees} off shift`;
   document.querySelector("#open-alert-count").textContent = String(openAlerts);
   document.querySelector("#nav-alert-count").textContent = String(openAlerts);
-  document.querySelector("#overview-site-name").textContent = workSite.name || "Work site not set";
-  document.querySelector("#site-city-summary").textContent = workSite.name || "Work site not set";
-  document.querySelector("#site-address-summary").textContent = fullAddress;
+  document.querySelector("#overview-site-name").textContent = siteName;
+  overviewLocationSelect.value = selectedLocationId;
 
   const siteAddressSummary = document.querySelector("#overview-site-address");
   siteAddressSummary.replaceChildren();
-  const siteName = document.createElement("strong");
-  const siteAddress = document.createElement("p");
-  siteName.textContent = workSite.name || "Work site not set";
-  siteAddress.textContent = [
-    workSite.address,
-    [workSite.city, workSite.state, workSite.postalCode].filter(Boolean).join(" "),
-  ].filter(Boolean).join("\n") || "Address not set";
-  siteAddressSummary.append(siteName, siteAddress);
+  const selectedSiteName = document.createElement("strong");
+  const selectedSiteAddress = document.createElement("p");
+  selectedSiteName.textContent = siteName;
+  selectedSiteAddress.textContent = siteAddress;
+  siteAddressSummary.append(selectedSiteName, selectedSiteAddress);
 
   const siteDetails = document.querySelector("#overview-site-details");
   siteDetails.replaceChildren();
-  const details = [
+  const details = selectedLocation ? [] : [
     ["Time zone", workSite.timezone || "Not set"],
     ["Coordinates", workSite.latitude && workSite.longitude ? `${workSite.latitude}, ${workSite.longitude}` : "Not set"],
   ];
@@ -217,12 +428,14 @@ function renderOverview() {
 function renderEmployees() {
   const search = employeeSearch.value.trim().toLowerCase();
   const selectedStatus = employeeFilter.value;
+  const selectedLocation = employeeLocationFilter.value;
   const filteredEmployees = employees.filter((employee) => {
     const employeeStatus = getEmployeeStatus(employee);
     const matchesSearch = [employee.name, employee.id, employee.phoneNumber, employeeStatus]
       .some((value) => value.toLowerCase().includes(search));
     const matchesStatus = selectedStatus === "all" || employeeStatus === selectedStatus;
-    return matchesSearch && matchesStatus;
+    const matchesLocation = selectedLocation === "all" || employee.locationId === selectedLocation;
+    return matchesSearch && matchesStatus && matchesLocation;
   });
 
   employeeRows.replaceChildren();
@@ -244,6 +457,9 @@ function renderEmployees() {
     const schedule = document.createElement("td");
     const status = document.createElement("td");
     const statusPill = document.createElement("span");
+    const location = document.createElement("td");
+    const locationName = document.createElement("span");
+    const locationAddress = document.createElement("span");
 
     person.className = "employee-cell";
     avatar.className = "avatar";
@@ -264,9 +480,46 @@ function renderEmployees() {
     statusPill.className = `status-pill status-${escapeClassName(currentStatus)}`;
     statusPill.textContent = currentStatus;
     status.append(statusPill);
-    row.append(personCell, schedule, status);
+    location.className = "employee-location";
+    locationName.textContent = employee.locationName;
+    locationAddress.textContent = employee.locationAddress;
+    location.append(locationName, locationAddress);
+    row.append(personCell, schedule, status, location);
     employeeRows.append(row);
   }
+}
+
+function renderEmployeeLocationFilter() {
+  const selectedLocation = employeeLocationFilter.value;
+  const allLocations = document.createElement("option");
+  allLocations.value = "all";
+  allLocations.textContent = "All locations";
+  employeeLocationFilter.replaceChildren(allLocations);
+
+  for (const location of locations) {
+    const option = document.createElement("option");
+    option.value = location.id;
+    option.textContent = location.name;
+    employeeLocationFilter.append(option);
+  }
+
+  employeeLocationFilter.value = locations.some((location) => location.id === selectedLocation) ? selectedLocation : "all";
+}
+
+function renderOverviewLocationOptions() {
+  const options = locations.map((location) => {
+    const option = document.createElement("option");
+    option.value = location.id;
+    option.textContent = [location.name, location.address].filter(Boolean).join(" — ");
+    return option;
+  });
+  overviewLocationSelect.replaceChildren(...options);
+  overviewLocationSelect.disabled = options.length === 0;
+  if (!locations.some((location) => location.id === selectedLocationId)) {
+    selectedLocationId = locations[0]?.id || "";
+  }
+  overviewLocationSelect.value = selectedLocationId;
+  loadSelectedLocationWeather();
 }
 
 function renderAlerts() {
@@ -359,6 +612,12 @@ document.querySelectorAll("[data-close-dialog]").forEach((button) => {
 
 employeeSearch.addEventListener("input", renderEmployees);
 employeeFilter.addEventListener("change", renderEmployees);
+employeeLocationFilter.addEventListener("change", renderEmployees);
+overviewLocationSelect.addEventListener("change", () => {
+  selectedLocationId = overviewLocationSelect.value;
+  renderOverview();
+  loadSelectedLocationWeather();
+});
 document.querySelector("#alert-filter").addEventListener("change", renderAlerts);
 
 document.querySelector("#alert-list").addEventListener("click", (event) => {
@@ -429,6 +688,10 @@ worksiteForm.addEventListener("submit", (event) => {
 
 renderAll();
 loadEmployees();
+loadLocations();
+window.setInterval(() => {
+  if (selectedLocationId) loadSelectedLocationWeather(true);
+}, 10 * 60 * 1000);
 
 async function loadEmployees() {
   try {
@@ -445,5 +708,33 @@ async function loadEmployees() {
     employeeLoadError = "Unable to load employees from the database. Check that the dashboard server and database are available.";
     console.error("Failed to load employees from the database.", error);
     renderAll();
+  }
+}
+
+async function loadLocations() {
+  try {
+    const response = await fetch("/api/locations");
+    if (!response.ok) throw new Error(`Location API returned HTTP ${response.status}.`);
+    const records = await response.json();
+    if (!Array.isArray(records)) throw new Error("Location API response must be an array.");
+
+    locations = records.map((location) => ({
+      id: String(location.locationId),
+      name: location.name,
+      address: location.address,
+      latitude: location.latitude,
+      longitude: location.longitude,
+    }));
+    renderOverviewLocationOptions();
+    renderEmployeeLocationFilter();
+    renderAll();
+  } catch (error) {
+    overviewLocationSelect.replaceChildren();
+    const unavailableOption = document.createElement("option");
+    unavailableOption.value = "";
+    unavailableOption.textContent = "Unable to load locations";
+    overviewLocationSelect.append(unavailableOption);
+    overviewLocationSelect.disabled = true;
+    console.error("Failed to load locations from the database.", error);
   }
 }

@@ -36,6 +36,15 @@ when the page reloads. The mobile server exposes `GET /api/health` and
 `GET /api/employees`; the main server also provides login, weather-alert
 snapshots, and SQLite-backed field reports.
 
+The overview work-site selector lists locations from the main database. The
+map geocodes a selected location's address with the U.S. Census Geocoder, then
+falls back to its locality through OpenStreetMap Nominatim. If geocoding is
+unavailable, it uses the saved site coordinates. It shows the NWS hourly
+temperature, wind, precipitation probability, humidity, and active alert
+polygons on OpenStreetMap tiles through Leaflet. Internet access is required,
+but no map API key. Configure or update fallback coordinates through the
+manager-only `PUT /api/locations/<id>` endpoint.
+
 ## Employee database
 
 `database/fieldcast.db` is a SQLite database seeded with the 200 supplied
