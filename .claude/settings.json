@@ -28,7 +28,11 @@
       "Bash(python -c \"import playwright; print\\('pw ok'\\)\")",
       "Bash(npm ls *)",
       "Bash(python -I shots.py http://localhost:4010/ cs 1536 864)",
-      "Bash(python shots.py http://localhost:4010/ cs 1536 864)"
+      "Bash(python shots.py http://localhost:4010/ cs 1536 864)",
+      "Bash(python -c \"import PIL; print\\('PIL', PIL.__version__\\)\")",
+      "Bash(python shot.py http://127.0.0.1:3000/landing/ hero)",
+      "Bash(git add *)",
+      "Bash(git commit -q -m 'Replace landing hero with layered forest scene *)"
     ]
   }
 }
