@@ -178,6 +178,183 @@ if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
   );
 }
 
+// ---------- rain on glass ("How it works" background) ----------
+// A blurred "mist" copy of the photo fills the canvas; each drop shows a sharper,
+// flipped and shrunk patch of the photo, like a real lens of water on a window.
+
+function rainOnGlass(canvas) {
+  const ctx = canvas.getContext("2d");
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const img = new Image();
+  const mist = document.createElement("canvas");
+  const sharp = document.createElement("canvas");
+  // wipe: `wiped` is an alpha mask of where the fog was cleared; `clear` composites it
+  const wiped = document.createElement("canvas");
+  const clear = document.createElement("canvas");
+  const wctx = wiped.getContext("2d");
+  const cctx = clear.getContext("2d");
+  let w = 0, h = 0, dpr = 1, drops = [], running = false, last = 0, pointer = null, fogClock = 0;
+
+  function cover(target, filter, haze) {
+    const c = target.getContext("2d");
+    target.width = w * dpr;
+    target.height = h * dpr;
+    const s = Math.max(target.width / img.width, target.height / img.height) * 1.08;
+    c.filter = filter;
+    c.drawImage(img, (target.width - img.width * s) / 2, (target.height - img.height * s) / 2, img.width * s, img.height * s);
+    c.filter = "none";
+    if (haze) {
+      c.fillStyle = haze;
+      c.fillRect(0, 0, target.width, target.height);
+    }
+  }
+
+  function resize() {
+    dpr = Math.min(devicePixelRatio || 1, 1.5);
+    w = canvas.clientWidth;
+    h = canvas.clientHeight;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    cover(mist, `blur(${28 * dpr}px) saturate(0.7)`, "rgb(205 215 215 / 22%)");
+    cover(sharp, `saturate(1.25) contrast(1.08)`);
+    wiped.width = clear.width = canvas.width;
+    wiped.height = clear.height = canvas.height;
+    const count = Math.round((w * h) / 9000);
+    drops = Array.from({ length: count }, () => spawn(Math.random() * h));
+  }
+
+  function spawn(y = -20) {
+    const r = Math.random() < 0.7 ? 1.5 + Math.random() * 3 : 4 + Math.random() * 6;
+    return { x: Math.random() * w, y, r, vy: 0, grow: Math.random() * 0.002 };
+  }
+
+  function drawDrop(d) {
+    const x = d.x * dpr, y = d.y * dpr, r = d.r * dpr, ry = r * 1.12;
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(x, y, r, ry, 0, 0, Math.PI * 2);
+    ctx.clip();
+    // refracted view: a wider patch of the sharp photo, flipped vertically
+    const k = 4;
+    ctx.translate(x, y);
+    ctx.scale(1, -1);
+    ctx.drawImage(sharp, x - r * k, y - r * k, r * k * 2, r * k * 2, -r, -ry, r * 2, ry * 2);
+    ctx.restore();
+    // rim shadow and highlight
+    ctx.beginPath();
+    ctx.ellipse(x, y, r, ry, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = r > 3 * dpr ? "rgb(0 0 0 / 28%)" : "rgb(255 255 255 / 18%)";
+    ctx.lineWidth = Math.max(1, r * 0.12);
+    ctx.stroke();
+    if (r > 3 * dpr) {
+      ctx.beginPath();
+      ctx.arc(x - r * 0.3, y - ry * 0.4, r * 0.18, 0, Math.PI * 2);
+      ctx.fillStyle = "rgb(255 255 255 / 55%)";
+      ctx.fill();
+    }
+  }
+
+  function step(dt) {
+    const born = [];
+    for (const d of drops) {
+      d.r = Math.min(d.r + d.grow * dt, 12);
+      if (d.r > 8) {
+        d.vy = Math.min(d.vy + 0.0002 * d.r * dt, 0.08 + d.r * 0.015);
+        d.x += (Math.random() - 0.5) * 0.4;
+        // leave a trail of tiny droplets behind fast drops
+        if (Math.random() < 0.15 * d.vy) born.push({ x: d.x, y: d.y - d.r, r: d.r * 0.22, vy: 0, grow: 0 });
+        d.r -= 0.0008 * dt;
+      }
+      d.y += d.vy * dt;
+    }
+    // merge overlapping drops into the larger one
+    drops.sort((a, b) => b.r - a.r);
+    for (let i = 0; i < drops.length; i++) {
+      const a = drops[i];
+      if (a.dead) continue;
+      for (let j = i + 1; j < drops.length; j++) {
+        const b = drops[j];
+        if (b.dead || Math.abs(a.x - b.x) > a.r + b.r || Math.abs(a.y - b.y) > a.r + b.r) continue;
+        if (Math.hypot(a.x - b.x, a.y - b.y) < (a.r + b.r) * 0.8) {
+          a.r = Math.min(Math.sqrt(a.r * a.r + b.r * b.r), 12);
+          b.dead = true;
+        }
+      }
+    }
+    drops = drops.filter((d) => !d.dead && d.y - d.r < h && d.r > 0.6).concat(born.slice(0, 20));
+    const target = Math.round((w * h) / 9000);
+    while (drops.length < target) drops.push(spawn(Math.random() * h));
+  }
+
+  function wipe(x, y) {
+    const r = 50 * dpr;
+    const from = pointer ?? { x, y };
+    const steps = Math.max(1, Math.ceil(Math.hypot(x - from.x, y - from.y) / (r / 4)));
+    for (let i = 1; i <= steps; i++) {
+      const px = from.x + ((x - from.x) * i) / steps;
+      const py = from.y + ((y - from.y) * i) / steps;
+      const g = wctx.createRadialGradient(px, py, 0, px, py, r);
+      g.addColorStop(0, "rgb(0 0 0 / 55%)");
+      g.addColorStop(1, "rgb(0 0 0 / 0%)");
+      wctx.fillStyle = g;
+      wctx.fillRect(px - r, py - r, r * 2, r * 2);
+    }
+    pointer = { x, y };
+  }
+
+  function frame(t) {
+    if (!running) return;
+    const dt = Math.min(t - (last || t), 50);
+    last = t;
+    step(dt);
+    // the fog creeps back over wiped glass; faded in chunks every 100ms because
+    // tiny per-frame alphas round to zero on an 8-bit canvas and leave residue
+    fogClock += dt;
+    if (fogClock >= 100) {
+      fogClock = 0;
+      wctx.globalCompositeOperation = "destination-out";
+      wctx.fillStyle = "rgb(0 0 0 / 5%)";
+      wctx.fillRect(0, 0, wiped.width, wiped.height);
+      wctx.globalCompositeOperation = "source-over";
+    }
+    ctx.drawImage(mist, 0, 0);
+    // clear glass = sharp photo, kept only where the mask was wiped
+    cctx.globalCompositeOperation = "copy";
+    cctx.drawImage(sharp, 0, 0);
+    cctx.globalCompositeOperation = "destination-in";
+    cctx.drawImage(wiped, 0, 0);
+    ctx.drawImage(clear, 0, 0);
+    drops.forEach(drawDrop);
+    requestAnimationFrame(frame);
+  }
+
+  img.onload = () => {
+    resize();
+    if (still) {
+      ctx.drawImage(mist, 0, 0);
+      drops.forEach(drawDrop);
+      return;
+    }
+    // only animate while the section is on screen
+    new IntersectionObserver(([entry]) => {
+      running = entry.isIntersecting;
+      last = 0;
+      if (running) requestAnimationFrame(frame);
+    }).observe(canvas);
+    addEventListener("resize", resize);
+    // listen on the section so wiping also works over the cards
+    const area = canvas.parentElement;
+    area.addEventListener("pointermove", (e) => {
+      const box = canvas.getBoundingClientRect();
+      wipe((e.clientX - box.left) * dpr, (e.clientY - box.top) * dpr);
+    });
+    area.addEventListener("pointerleave", () => (pointer = null));
+  };
+  img.src = canvas.dataset.src;
+}
+
+document.querySelectorAll("canvas.rain").forEach(rainOnGlass);
+
 // ---------- mobile menu ----------
 
 const burger = document.querySelector(".burger");

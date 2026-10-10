@@ -169,7 +169,9 @@
       </section>
 
       <!-- HOW IT WORKS -->
-      <section class="section" id="how">
+      <section class="section how" id="how">
+        <canvas class="rain" data-src="./assets/rain-bg.webp" aria-hidden="true"></canvas>
+        <div class="rain-shade" aria-hidden="true"></div>
         <div class="container">
           <div class="section-head">
             <p class="eyebrow reveal">How it works</p>
@@ -366,48 +368,48 @@
       </section>
 
       <!-- NOTIFICATION -->
-      <section class="section" id="notify">
-        <div class="container">
-          <div class="section-head">
-            <p class="eyebrow reveal">The notification package</p>
+      <section class="section notify" id="notify">
+        <img class="notify-bg" src="./assets/notify-bg.webp" alt="" aria-hidden="true" />
+        <div class="notify-shade" aria-hidden="true"></div>
+        <div class="container notify-inner">
+          <div class="notify-head">
+            <p class="notify-chip reveal"><span aria-hidden="true"></span>The notification package</p>
             <h2 class="reveal">Right people. Right channel. <em>And a reason for everyone left out.</em></h2>
           </div>
-          <div class="bezel reveal">
-            <div class="bezel-core recipients">
-              <div class="recipients-bar" aria-hidden="true">
-                <span style="--w: 79%; --c: var(--green)"></span>
-                <span style="--w: 6%; --c: var(--amber)"></span>
-                <span style="--w: 11%; --c: var(--blue)"></span>
-                <span style="--w: 4%; --c: var(--muted)"></span>
+          <ul class="notify-cards">
+            <li class="notify-card reveal">
+              <div>
+                <p class="r-num">38</p>
+                <p class="r-title">Notify now</p>
+                <p class="r-desc">Assigned to the building and scheduled today.</p>
+                <p class="r-channel">SMS + email</p>
               </div>
-              <ul class="recipient-groups">
-                <li style="--c: var(--green)">
-                  <p class="r-num">38</p>
-                  <p class="r-title">Notify now</p>
-                  <p class="small muted">Assigned to the building and scheduled today.</p>
-                  <p class="mono tiny">SMS + email</p>
-                </li>
-                <li style="--c: var(--amber)">
-                  <p class="r-num">3</p>
-                  <p class="r-title">Essential personnel</p>
-                  <p class="small muted">Reporting requirements unchanged. Separate instructions.</p>
-                  <p class="mono tiny">SMS + call</p>
-                </li>
-                <li style="--c: var(--blue)">
-                  <p class="r-num">5</p>
-                  <p class="r-title">Already teleworking</p>
-                  <p class="small muted">Informed, but nobody gets woken up at 4 a.m.</p>
-                  <p class="mono tiny">Email only</p>
-                </li>
-                <li style="--c: var(--muted)">
-                  <p class="r-num">2</p>
-                  <p class="r-title">Excluded</p>
-                  <p class="small muted">On temporary duty at another site, covered by that site’s decision.</p>
-                  <p class="mono tiny">No message</p>
-                </li>
-              </ul>
-            </div>
-          </div>
+            </li>
+            <li class="notify-card reveal" style="--d: 80ms">
+              <div>
+                <p class="r-num">3</p>
+                <p class="r-title">Essential personnel</p>
+                <p class="r-desc">Reporting requirements unchanged. Separate instructions.</p>
+                <p class="r-channel">SMS + call</p>
+              </div>
+            </li>
+            <li class="notify-card reveal" style="--d: 160ms">
+              <div>
+                <p class="r-num">5</p>
+                <p class="r-title">Already teleworking</p>
+                <p class="r-desc">Informed, but nobody gets woken up at 4 a.m.</p>
+                <p class="r-channel">Email only</p>
+              </div>
+            </li>
+            <li class="notify-card reveal" style="--d: 240ms">
+              <div>
+                <p class="r-num">2</p>
+                <p class="r-title">Excluded</p>
+                <p class="r-desc">On temporary duty at another site, covered by that site’s decision.</p>
+                <p class="r-channel">No message</p>
+              </div>
+            </li>
+          </ul>
         </div>
       </section>
 
