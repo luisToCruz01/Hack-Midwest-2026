@@ -142,6 +142,177 @@ function selectPosture(key) {
 tabs.forEach((tab) => tab.addEventListener("click", () => selectPosture(tab.dataset.posture)));
 selectPosture("telework");
 
+// ---------- weather sky: a good day turns bad, and the posture follows ----------
+// `weather` runs 0 (clear) → 1 (storm). Posture i sits at weather i/4 and the meter
+// knob at 10% + weather·80%, so the bar slides continuously with the sky.
+
+const SKY_SHADER = `
+precision mediump float;
+uniform vec2 uRes;
+uniform float uTime;
+uniform float uWeather;
+
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
+}
+float fbm(vec2 p) {
+  float v = 0.0, a = 0.5;
+  mat2 r = mat2(1.6, 1.2, -1.2, 1.6);
+  for (int i = 0; i < 6; i++) { v += a * noise(p); p = r * p; a *= 0.5; }
+  return v;
+}
+
+void main() {
+  vec2 st = gl_FragCoord.xy / uRes;
+  vec2 uv = gl_FragCoord.xy / uRes.y;
+  float w = uWeather;
+  float t = uTime * (0.025 + w * 0.05);
+
+  // two drifting cloud layers; the coverage threshold drops as the weather turns
+  float base = fbm(uv * 2.4 + vec2(t, t * 0.2));
+  float detail = fbm(uv * 6.0 - vec2(t * 1.8, 0.0) + base);
+  float n = base * 0.6 + detail * 0.4;
+  float cover = mix(0.43, 0.2, w);
+  float cloud = smoothstep(cover, cover + mix(0.14, 0.4, w), n);
+
+  vec3 skyTop = mix(vec3(0.0, 0.22, 0.44), vec3(0.09, 0.11, 0.13), w);
+  vec3 skyLow = mix(vec3(0.4, 0.7, 1.0), vec3(0.25, 0.28, 0.31), w);
+  vec3 sky = mix(skyLow, skyTop, st.y);
+
+  // lit tops and shaded bellies, both darkening into storm greys
+  float light = clamp(detail * 1.5 - 0.15, 0.0, 1.0);
+  vec3 lit = mix(vec3(1.0), vec3(0.45, 0.48, 0.52), w);
+  vec3 dark = mix(vec3(0.72, 0.8, 0.9), vec3(0.12, 0.14, 0.16), w);
+  vec3 col = mix(sky, mix(dark, lit, light), cloud);
+
+  // slanted rain once the storm sets in
+  float rain = smoothstep(0.55, 0.9, w);
+  if (rain > 0.0) {
+    vec2 r = vec2(st.x * uRes.x / 7.0 + st.y * 18.0, st.y);
+    float lane = floor(r.x);
+    float speed = 1.6 + hash(vec2(lane, 1.0));
+    float y = fract(r.y * 1.4 + uTime * speed + hash(vec2(lane, 7.0)) * 10.0);
+    float streak = step(0.55, hash(vec2(lane, 3.0))) * smoothstep(0.0, 0.03, y) * smoothstep(0.16, 0.03, y);
+    float thin = 1.0 - smoothstep(0.0, 0.18, abs(fract(r.x) - 0.5));
+    col = mix(col, vec3(0.75, 0.8, 0.85), streak * thin * rain * 0.45);
+  }
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+function weatherSky(canvas) {
+  const gl = canvas.getContext("webgl", { antialias: false, premultipliedAlpha: false });
+  if (!gl) return null;
+  const compile = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  };
+  const program = gl.createProgram();
+  gl.attachShader(program, compile(gl.VERTEX_SHADER, "attribute vec2 p;void main(){gl_Position=vec4(p,0,1);}"));
+  gl.attachShader(program, compile(gl.FRAGMENT_SHADER, SKY_SHADER));
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return null;
+  gl.useProgram(program);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  const uRes = gl.getUniformLocation(program, "uRes");
+  const uTime = gl.getUniformLocation(program, "uTime");
+  const uWeather = gl.getUniformLocation(program, "uWeather");
+
+  // soft clouds don't need full resolution; render at half size and let CSS scale up
+  function resize() {
+    canvas.width = Math.round(canvas.clientWidth * 0.5);
+    canvas.height = Math.round(canvas.clientHeight * 0.5);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+  }
+  resize();
+  addEventListener("resize", resize);
+
+  return (time, weather) => {
+    gl.uniform2f(uRes, canvas.width, canvas.height);
+    gl.uniform1f(uTime, time);
+    gl.uniform1f(uWeather, weather);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  };
+}
+
+// 0–3 s clear, 3–11 s worsening, 11–14 s storm, 14–18 s clearing
+function forecast(seconds) {
+  const s = seconds % 18;
+  const ease = (x) => x * x * (3 - 2 * x);
+  if (s < 3) return 0;
+  if (s < 11) return ease((s - 3) / 8);
+  if (s < 14) return 1;
+  return 1 - ease((s - 14) / 4);
+}
+
+(function linkPosturesToWeather() {
+  const canvas = document.querySelector(".sky-canvas");
+  const draw = canvas && weatherSky(canvas);
+  if (!draw) return; // no WebGL: the CSS gradient and clickable tabs still work
+
+  const keys = tabs.length ? [...tabs].map((tab) => tab.dataset.posture) : [];
+  const fill = document.getElementById("posture-fill");
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let weather = 0, shown = "", manualUntil = 0, manualTarget = 0, running = false, start = 0, last = 0;
+  apply();
+
+  function apply() {
+    fill.style.setProperty("--x", `${10 + weather * 80}%`);
+    const key = keys[Math.round(weather * 4)];
+    if (key !== shown) {
+      shown = key;
+      selectPosture(key);
+      fill.style.setProperty("--x", `${10 + weather * 80}%`);
+    }
+  }
+
+  // clicking a tab sets the sky to that posture's weather and holds it for a while
+  tabs.forEach((tab, i) =>
+    tab.addEventListener("click", () => {
+      shown = tab.dataset.posture;
+      manualTarget = i / 4;
+      manualUntil = performance.now() + 10_000;
+      if (still) {
+        weather = manualTarget;
+        draw(0, weather);
+      }
+    }),
+  );
+
+  function frame(now) {
+    if (!running) return;
+    const seconds = (now - start) / 1000;
+    const dt = Math.min((now - (last || now)) / 1000, 0.25);
+    last = now;
+    const target = now < manualUntil ? manualTarget : forecast(seconds);
+    // frame-rate independent ease toward the target weather
+    weather += (target - weather) * (1 - Math.exp(-dt * 3));
+    apply();
+    draw(seconds, weather);
+    requestAnimationFrame(frame);
+  }
+
+  if (still) {
+    draw(0, weather);
+    return;
+  }
+  new IntersectionObserver(([entry]) => {
+    running = entry.isIntersecting;
+    last = 0;
+    if (running) {
+      if (!start) start = performance.now();
+      requestAnimationFrame(frame);
+    }
+  }).observe(canvas);
+})();
+
 // ---------- odometer numbers (rolled into place by the reveal below) ----------
 
 document.querySelectorAll(".odo").forEach((el) => {
