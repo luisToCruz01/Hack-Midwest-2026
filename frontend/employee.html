@@ -42,6 +42,11 @@
             serious National Weather Service alerts near you. Your latest location is removed when
             you turn sharing off and otherwise expires after 24 hours.
           </p>
+          <p class="employee-privacy-copy">
+            While sharing is on, your latest coordinates and update time are visible to authorized
+            managers in the employee roster. Updates stop when this page is closed; turning sharing
+            off deletes the saved coordinates.
+          </p>
           <p class="employee-location-limit">
             This is a website: location checks require this page to remain open. Your browser or
             operating system may pause checks in the background. It does not track you after the
@@ -63,14 +68,23 @@
               <h2 id="email-alerts-title">Email alerts</h2>
             </div>
           </div>
+          <form id="employee-email-form" class="employee-email-form">
+            <label class="field field-wide" for="employee-email-input">
+              Email address
+              <input id="employee-email-input" name="email" type="email" maxlength="254"
+                autocomplete="email" placeholder="name@example.com" />
+            </label>
+            <button class="secondary-button" id="save-employee-email" type="submit">Save email address</button>
+          </form>
           <p class="employee-email-address" id="employee-email-address">Loading email address...</p>
           <label class="employee-email-option">
             <input id="email-alerts-checkbox" type="checkbox" disabled />
             <span>Send safety alerts to me by email.</span>
           </label>
           <p class="employee-privacy-copy">
-            Email alerts require an address on file and the organization’s Gmail SMTP service to be
-            configured. You can turn email alerts off here at any time.
+            Save a valid address, then check the box to opt in. Email delivery also requires the
+            organization’s Gmail SMTP service to be configured. You can turn email alerts off here
+            at any time.
           </p>
           <p class="form-feedback" id="email-alerts-feedback" role="status" aria-live="polite"></p>
         </section>

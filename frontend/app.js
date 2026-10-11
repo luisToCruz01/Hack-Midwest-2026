@@ -24,6 +24,7 @@ let deliveryLogError = "";
 let selectedLocationId = "";
 let employeesLoading = true;
 let employeeLoadError = "";
+let employeeRefreshInProgress = false;
 let weatherMap;
 let weatherMapLayers;
 let weatherRequestId = 0;
@@ -331,6 +332,10 @@ function mapDatabaseEmployee(employee) {
     locationId: String(employee.locationId),
     locationName: employee.locationName,
     locationAddress: employee.locationAddress,
+    locationSharing: employee.locationSharing === true,
+    sharedLatitude: employee.sharedLatitude,
+    sharedLongitude: employee.sharedLongitude,
+    locationUpdatedAt: employee.locationUpdatedAt,
     schedule: {
       days: expandDaysOfWeek(employee.daysOfWeek),
       startTime: employee.shiftStart,
@@ -596,6 +601,9 @@ function renderEmployees() {
     const location = document.createElement("td");
     const locationName = document.createElement("span");
     const locationAddress = document.createElement("span");
+    const sharedLocation = document.createElement("td");
+    const sharedCoordinates = document.createElement("span");
+    const sharedTimestamp = document.createElement("span");
 
     person.className = "employee-cell";
     avatar.className = "avatar";
@@ -620,7 +628,24 @@ function renderEmployees() {
     locationName.textContent = employee.locationName;
     locationAddress.textContent = employee.locationAddress;
     location.append(locationName, locationAddress);
-    row.append(personCell, schedule, status, location);
+    sharedLocation.className = "employee-location";
+    const hasCoordinates = Number.isFinite(employee.sharedLatitude)
+      && Number.isFinite(employee.sharedLongitude)
+      && employee.locationUpdatedAt;
+    if (!employee.locationSharing) {
+      sharedCoordinates.textContent = "Not shared";
+    } else if (hasCoordinates) {
+      sharedCoordinates.textContent = `${employee.sharedLatitude.toFixed(5)}, ${employee.sharedLongitude.toFixed(5)}`;
+      const updatedAt = new Date(employee.locationUpdatedAt);
+      sharedTimestamp.textContent = Number.isNaN(updatedAt.getTime())
+        ? "Last update time unavailable"
+        : `Updated ${new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(updatedAt)}`;
+    } else {
+      sharedCoordinates.textContent = "Waiting for first update";
+    }
+    sharedLocation.append(sharedCoordinates);
+    if (sharedTimestamp.textContent) sharedLocation.append(sharedTimestamp);
+    row.append(personCell, schedule, status, location, sharedLocation);
     employeeRows.append(row);
   }
 }
@@ -830,6 +855,8 @@ window.setInterval(() => {
 }, 10 * 60 * 1000);
 
 async function loadEmployees() {
+  if (employeeRefreshInProgress) return;
+  employeeRefreshInProgress = true;
   try {
     const response = await fetch("/api/employees", {
       headers: { Authorization: `Bearer ${authToken}` },
@@ -849,14 +876,16 @@ async function loadEmployees() {
   } catch (error) {
     employeeLoadError = error.message || "Unable to load employees from the database.";
     console.error("Failed to load employees from the database.", error);
+  } finally {
+    employeeRefreshInProgress = false;
+    employeesLoading = false;
+    renderAll();
   }
-  employeesLoading = false;
-  renderAll();
 }
 
 window.setInterval(() => {
   renderOverview();
-  renderEmployees();
+  loadEmployees();
 }, 60_000);
 
 document.querySelector("#logout-link").addEventListener("click", () => {

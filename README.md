@@ -52,9 +52,11 @@ is a demo stub, not secure authentication.
 Employees can opt in to location-based personal NWS alerts on the employee
 page. In this website, location checks run about once a minute only while that
 page is open and visible; browsers may pause background tabs. The latest
-location is deleted when location sharing is turned off and otherwise expires
-after 24 hours. Email alerts are a separate employee opt-in and require an
-email address on the employee profile.
+location is visible to managers in the employee roster while sharing is on. It
+is deleted when sharing is turned off and otherwise expires after 24 hours.
+Email alerts are a separate employee opt-in: employees can save or update their
+own email address in the portal, then check the email opt-in box. Changing an
+address turns email consent off until the employee opts in again.
 
 To enable Gmail email delivery, copy the following settings to
 `backend/.env` locally, or configure them as environment variables in your
@@ -72,7 +74,8 @@ For Gmail, enable 2-Step Verification and generate an App Password for the
 account; use that App Password as `SMTP_PASSWORD`, not the account password.
 The health endpoint reports `smtp` only when the SMTP credentials are
 configured. Load employee email addresses through the manager employee
-contacts import; each employee must opt in on their alerts page. An email
+contacts import or let employees save their address in the portal; each employee
+must opt in on their alerts page. An email
 record marked `sent` means Gmail accepted the message for sending, not that it
 arrived in the recipient's inbox.
 

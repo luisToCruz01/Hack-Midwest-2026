@@ -386,8 +386,25 @@ h2 {
   accent-color: var(--green);
 }
 
+.employee-email-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.75rem;
+  max-width: 680px;
+  margin-top: 1rem;
+}
+
+.employee-email-form .field {
+  margin: 0;
+}
+
+.employee-email-form .secondary-button {
+  min-height: 44px;
+}
+
 .employee-email-address {
-  margin: 1rem 0 0;
+  margin: 0.75rem 0 0;
   color: #a8bfbb;
   font-size: 0.82rem;
 }
@@ -1219,6 +1236,12 @@ tbody tr:last-child td {
   margin: 0;
   color: var(--green);
   font-size: 0.76rem;
+}
+
+@media (max-width: 560px) {
+  .employee-email-form {
+    grid-template-columns: 1fr;
+  }
 }
 
 .modal {

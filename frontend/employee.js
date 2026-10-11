@@ -9,6 +9,9 @@ const locationFeedback = document.querySelector("#location-sharing-feedback");
 const emailCheckbox = document.querySelector("#email-alerts-checkbox");
 const emailAddress = document.querySelector("#employee-email-address");
 const emailFeedback = document.querySelector("#email-alerts-feedback");
+const emailForm = document.querySelector("#employee-email-form");
+const emailInput = document.querySelector("#employee-email-input");
+const saveEmailButton = document.querySelector("#save-employee-email");
 const notificationsList = document.querySelector("#personal-notification-list");
 const notificationsStatus = document.querySelector("#personal-notifications-status");
 const notificationsEmpty = document.querySelector("#personal-notifications-empty");
@@ -16,6 +19,7 @@ const notificationsEmpty = document.querySelector("#personal-notifications-empty
 let locationSharing = false;
 let locationTimer = null;
 let locationRequestInProgress = false;
+let savedEmail = "";
 
 function authHeaders(json = false) {
   const headers = { Authorization: `Bearer ${authToken}` };
@@ -49,29 +53,33 @@ function showLocationSharingState(enabled) {
 function requestCurrentPosition() {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
-      reject(new Error("This browser does not support location sharing."));
+      reject(new Error("This browser does not support location sharing. Try a current version of Chrome or Edge."));
+      return;
+    }
+    if (!window.isSecureContext) {
+      reject(new Error("Location needs a secure page. Open Fieldcast at http://localhost or http://127.0.0.1, not by opening the file directly."));
       return;
     }
     navigator.geolocation.getCurrentPosition(
       resolve,
       (error) => {
         const message = error.code === error.PERMISSION_DENIED
-          ? "Location permission was denied. Allow it in your browser settings to use location alerts."
+          ? "Location permission was denied. Allow location for this site in the browser's site settings, then try again."
           : error.code === error.POSITION_UNAVAILABLE
-            ? "Your current location is unavailable."
-            : "The location request timed out. Please try again.";
+            ? "Windows could not determine this laptop's location. Turn on Location services in Windows Settings > Privacy & security > Location, and enable Wi-Fi."
+            : "Windows did not return a location in time. Check Windows Location services and Wi-Fi, keep this page in front, then try again.";
         reject(new Error(message));
       },
-      { enableHighAccuracy: false, maximumAge: 15000, timeout: 20000 },
+      { enableHighAccuracy: false, maximumAge: 60_000, timeout: 60_000 },
     );
   });
 }
 
-async function checkCurrentLocation() {
+async function checkCurrentLocation(initialPosition = null) {
   if (!locationSharing || document.visibilityState !== "visible" || locationRequestInProgress) return;
   locationRequestInProgress = true;
   try {
-    const position = await requestCurrentPosition();
+    const position = initialPosition || await requestCurrentPosition();
     const result = await apiRequest("/api/location", {
       method: "POST",
       body: JSON.stringify({
@@ -95,17 +103,17 @@ async function checkCurrentLocation() {
   }
 }
 
-function startForegroundLocationChecks() {
+function startForegroundLocationChecks(initialPosition = null) {
   window.clearInterval(locationTimer);
   locationTimer = window.setInterval(checkCurrentLocation, 60_000);
-  checkCurrentLocation();
+  checkCurrentLocation(initialPosition);
 }
 
 async function setLocationSharing(enabled) {
   locationButton.disabled = true;
   locationFeedback.textContent = enabled ? "Requesting browser location permission..." : "Turning off location sharing...";
   try {
-    if (enabled) await requestCurrentPosition();
+    const initialPosition = enabled ? await requestCurrentPosition() : null;
     await apiRequest("/api/location/consent", {
       method: "POST",
       body: JSON.stringify({ consent: enabled }),
@@ -113,7 +121,7 @@ async function setLocationSharing(enabled) {
     showLocationSharingState(enabled);
     if (enabled) {
       locationFeedback.textContent = "Location alerts are on while this page stays open.";
-      startForegroundLocationChecks();
+      startForegroundLocationChecks(initialPosition);
     } else {
       window.clearInterval(locationTimer);
       locationTimer = null;
@@ -184,13 +192,15 @@ async function loadProfile() {
       return;
     }
     document.querySelector("#employee-greeting").textContent = `Hello, ${profile.name}`;
-    emailAddress.textContent = profile.email
-      ? `Email on file: ${profile.email}`
-      : "No email address is on file. Ask your manager to add one to your employee profile.";
-    emailCheckbox.disabled = !profile.email && !profile.emailAlerts;
+    savedEmail = profile.email || "";
+    emailInput.value = savedEmail;
+    emailAddress.textContent = savedEmail
+      ? `Saved email address: ${savedEmail}`
+      : "No email address has been saved yet.";
+    emailCheckbox.disabled = !savedEmail && !profile.emailAlerts;
     emailCheckbox.checked = profile.emailAlerts;
-    if (!profile.email) {
-      emailFeedback.textContent = "Add an email address to your employee profile to enable email alerts.";
+    if (!savedEmail) {
+      emailFeedback.textContent = "Save an email address above to enable email alerts.";
     }
     showLocationSharingState(profile.locationSharing);
     if (profile.locationSharing) {
@@ -204,7 +214,38 @@ async function loadProfile() {
 
 locationButton.addEventListener("click", () => setLocationSharing(!locationSharing));
 
+emailForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!emailInput.reportValidity()) return;
+  saveEmailButton.disabled = true;
+  emailFeedback.textContent = "Saving your email address...";
+  try {
+    const previousEmail = savedEmail;
+    const result = await apiRequest("/api/my/email", {
+      method: "POST",
+      body: JSON.stringify({ email: emailInput.value.trim() }),
+    });
+    savedEmail = result.email || "";
+    emailInput.value = savedEmail;
+    emailAddress.textContent = savedEmail
+      ? `Saved email address: ${savedEmail}`
+      : "No email address has been saved yet.";
+    emailCheckbox.checked = result.emailAlerts;
+    emailCheckbox.disabled = !savedEmail && !result.emailAlerts;
+    emailFeedback.textContent = !savedEmail
+      ? "Email address removed. Email alerts are off."
+      : previousEmail !== savedEmail
+        ? "Address saved. Check the box below to opt in to email alerts."
+        : "Email address saved.";
+  } catch (error) {
+    emailFeedback.textContent = error instanceof Error ? error.message : "Unable to save your email address.";
+  } finally {
+    saveEmailButton.disabled = false;
+  }
+});
+
 emailCheckbox.addEventListener("change", async () => {
+  const previousValue = !emailCheckbox.checked;
   emailCheckbox.disabled = true;
   emailFeedback.textContent = "Saving your email preference...";
   try {
@@ -217,10 +258,10 @@ emailCheckbox.addEventListener("change", async () => {
       ? "Email alerts are on. Delivery requires the organization’s Gmail SMTP service to be configured."
       : "Email alerts are off.";
   } catch (error) {
-    emailCheckbox.checked = !emailCheckbox.checked;
+    emailCheckbox.checked = previousValue;
     emailFeedback.textContent = error instanceof Error ? error.message : "Unable to save your email preference.";
   } finally {
-    emailCheckbox.disabled = !emailAddress.textContent.startsWith("Email on file:") && !emailCheckbox.checked;
+    emailCheckbox.disabled = !savedEmail && !emailCheckbox.checked;
   }
 });
 

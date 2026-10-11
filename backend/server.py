@@ -65,6 +65,7 @@ Routes
   POST /api/admin/employees/contacts       {"employees":[{"userId","email","phone",...}]}  (manager)
   POST /api/location/consent               {"consent": true}
   POST /api/notifications/consent          {"emailAlerts": true}
+  POST /api/my/email                       {"email": "person@example.com"}
   POST /api/location                       {"lat":..,"lon":..}  (employee portal, while open)
   GET  /api/my/notifications
   GET  /api/decision-log, /api/decision-log/verify            (manager)
@@ -1658,6 +1659,7 @@ ROUTES = [(m, re.compile(p), name, access) for m, p, name, access in [
     ("POST", r"/api/admin/employees/contacts", "h_employees_contacts", "manager"),
     ("POST", r"/api/location/consent", "h_consent", "auth"),
     ("POST", r"/api/notifications/consent", "h_notifications_consent", "auth"),
+    ("POST", r"/api/my/email", "h_my_email", "auth"),
     ("POST", r"/api/location", "h_location_update", "auth"),
     ("GET", r"/api/my/notifications", "h_my_notifications", "auth"),
     ("GET", r"/api/decision-log", "h_log", "manager"),
@@ -1768,16 +1770,27 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
         with get_db() as conn:
             rows = conn.execute(
                 "SELECT e.user_id, e.full_name, e.shift_start, e.shift_end, e.days_of_week, "
-                "e.location_id, l.name AS location_name, l.address AS location_address, g.tz "
+                "e.location_id, l.name AS location_name, l.address AS location_address, g.tz, "
+                "COALESCE(f.location_consent, 0) AS location_sharing, "
+                "CASE WHEN f.location_consent = 1 THEN el.lat END AS shared_lat, "
+                "CASE WHEN f.location_consent = 1 THEN el.lon END AS shared_lon, "
+                "CASE WHEN f.location_consent = 1 THEN el.updated_at END AS location_updated_at "
                 "FROM employees e JOIN locations l ON l.location_id = e.location_id "
                 "LEFT JOIN location_geo g ON g.location_id = e.location_id "
-                "ORDER BY lower(e.full_name), e.user_id").fetchall()
+                "LEFT JOIN employee_flags f ON f.user_id = e.user_id "
+                "LEFT JOIN employee_location el ON el.user_id = e.user_id AND el.updated_at >= ? "
+                "ORDER BY lower(e.full_name), e.user_id",
+                ((datetime.now(timezone.utc) - timedelta(hours=LOCATION_TTL_HOURS)).isoformat(),),
+            ).fetchall()
         self.send_json([{
             "userId": r["user_id"], "fullName": r["full_name"],
             "shiftStart": r["shift_start"], "shiftEnd": r["shift_end"],
             "daysOfWeek": r["days_of_week"], "locationId": r["location_id"],
             "locationName": r["location_name"], "locationAddress": r["location_address"],
             "locationTimezone": r["tz"],
+            "locationSharing": bool(r["location_sharing"]),
+            "sharedLatitude": r["shared_lat"], "sharedLongitude": r["shared_lon"],
+            "locationUpdatedAt": r["location_updated_at"],
         } for r in rows])
 
     # ----- facilities -----
@@ -2176,6 +2189,35 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
                 (employee["user_id"], 1 if consent else 0),
             )
         self.send_json({"emailAlerts": consent})
+
+    def h_my_email(self, employee, query):
+        payload = self.read_json_object()
+        if payload is None:
+            return
+        email = payload.get("email")
+        if not isinstance(email, str):
+            self.send_json({"error": "email must be a string."}, status=400)
+            return
+        email = email.strip()
+        if email and not valid_email_address(email):
+            self.send_json({"error": "Enter a valid email address."}, status=400)
+            return
+
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO employee_flags (user_id, email, email_consent) VALUES (?, ?, 0) "
+                "ON CONFLICT (user_id) DO UPDATE SET "
+                "email_consent = CASE WHEN COALESCE(employee_flags.email, '') <> COALESCE(excluded.email, '') "
+                "THEN 0 ELSE employee_flags.email_consent END, "
+                "email = excluded.email",
+                (employee["user_id"], email or None),
+            )
+            row = conn.execute(
+                "SELECT email, COALESCE(email_consent, 0) AS email_consent "
+                "FROM employee_flags WHERE user_id = ?",
+                (employee["user_id"],),
+            ).fetchone()
+        self.send_json({"email": row["email"], "emailAlerts": bool(row["email_consent"])})
 
     def h_location_update(self, employee, query):
         payload = self.read_json_object()
