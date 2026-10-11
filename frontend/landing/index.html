@@ -39,7 +39,7 @@
           <li><a href="#log">Decision log</a></li>
           <li><a href="#thresholds">Thresholds</a></li>
         </ul>
-        <a class="btn btn-small" href="../login.html">
+        <a class="btn btn-small" href="/login.html" data-dashboard-link>
           <span>Log in</span>
           <span class="btn-icon" aria-hidden="true">↗</span>
         </a>
@@ -56,7 +56,7 @@
         <li><a href="#notify">Notification</a></li>
         <li><a href="#log">Decision log</a></li>
         <li><a href="#thresholds">Thresholds</a></li>
-        <li><a href="../login.html">Log in ↗</a></li>
+        <li><a href="/login.html" data-dashboard-link>Log in ↗</a></li>
       </ul>
     </div>
 
@@ -78,7 +78,7 @@
                 affected employee hears about it on the right channel.
               </p>
               <div class="hero-actions hero-in" style="--d: 240ms">
-                <a class="btn btn-forest" href="../login.html">
+                <a class="btn btn-forest" href="/login.html" data-dashboard-link>
                   <span>Open dashboard</span>
                   <span class="btn-icon" aria-hidden="true">↗</span>
                 </a>
@@ -219,47 +219,6 @@
         </div>
       </section>
 
-      <!-- POSTURES -->
-      <section class="section sky" id="postures">
-        <canvas class="sky-canvas" aria-hidden="true"></canvas>
-        <div class="sky-shade" aria-hidden="true"></div>
-        <div class="container">
-          <div class="section-head">
-            <p class="eyebrow reveal">Graded, not binary</p>
-            <h2 class="reveal">Five operating postures. <em>The same ones the federal workforce already uses.</em></h2>
-            <p class="section-lede reveal">Recommendations map to OPM-style operating status categories,
-              so the output speaks the language employees and supervisors already know.</p>
-          </div>
-
-          <div class="bezel reveal">
-            <div class="bezel-core postures">
-              <div class="posture-scale" role="tablist" aria-label="Operating postures">
-                <button role="tab" class="posture-tab" data-posture="normal" style="--c: var(--p-normal)">Normal operations</button>
-                <button role="tab" class="posture-tab" data-posture="delay" style="--c: var(--p-delay)">Delayed arrival</button>
-                <button role="tab" class="posture-tab" data-posture="early" style="--c: var(--p-early)">Early dismissal</button>
-                <button role="tab" class="posture-tab" data-posture="telework" style="--c: var(--p-telework)">Leave / telework</button>
-                <button role="tab" class="posture-tab" data-posture="closed" style="--c: var(--p-closed)">Closed</button>
-              </div>
-              <div class="posture-meter" aria-hidden="true"><span id="posture-fill"></span></div>
-              <div class="posture-detail" role="tabpanel" id="posture-detail">
-                <div>
-                  <p class="mono label">Typical trigger</p>
-                  <p id="pd-trigger"></p>
-                </div>
-                <div>
-                  <p class="mono label">Who hears about it</p>
-                  <p id="pd-who"></p>
-                </div>
-                <div>
-                  <p class="mono label">Notification urgency</p>
-                  <p id="pd-urgency"></p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <!-- RECOMMENDATION -->
       <section class="section" id="recommendation">
         <div class="container rec-grid">
@@ -326,6 +285,47 @@
         </div>
       </section>
 
+      <!-- POSTURES -->
+      <section class="section sky" id="postures">
+        <canvas class="sky-canvas" aria-hidden="true"></canvas>
+        <div class="sky-shade" aria-hidden="true"></div>
+        <div class="container">
+          <div class="section-head">
+            <p class="eyebrow reveal">Graded, not binary</p>
+            <h2 class="reveal">Five operating postures. <em>The same ones the federal workforce already uses.</em></h2>
+            <p class="section-lede reveal">Recommendations map to OPM-style operating status categories,
+              so the output speaks the language employees and supervisors already know.</p>
+          </div>
+
+          <div class="bezel reveal">
+            <div class="bezel-core postures">
+              <div class="posture-scale" role="tablist" aria-label="Operating postures">
+                <button role="tab" class="posture-tab" data-posture="normal" style="--c: var(--p-normal)">Normal operations</button>
+                <button role="tab" class="posture-tab" data-posture="delay" style="--c: var(--p-delay)">Delayed arrival</button>
+                <button role="tab" class="posture-tab" data-posture="early" style="--c: var(--p-early)">Early dismissal</button>
+                <button role="tab" class="posture-tab" data-posture="telework" style="--c: var(--p-telework)">Leave / telework</button>
+                <button role="tab" class="posture-tab" data-posture="closed" style="--c: var(--p-closed)">Closed</button>
+              </div>
+              <div class="posture-meter" aria-hidden="true"><span id="posture-fill"></span></div>
+              <div class="posture-detail" role="tabpanel" id="posture-detail">
+                <div>
+                  <p class="mono label">Typical trigger</p>
+                  <p id="pd-trigger"></p>
+                </div>
+                <div>
+                  <p class="mono label">Who hears about it</p>
+                  <p id="pd-who"></p>
+                </div>
+                <div>
+                  <p class="mono label">Notification urgency</p>
+                  <p id="pd-urgency"></p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- ROLES -->
       <section class="section" id="roles">
         <div class="container">
@@ -375,7 +375,6 @@
         <div class="notify-shade" aria-hidden="true"></div>
         <div class="container notify-inner">
           <div class="notify-head">
-            <p class="notify-chip reveal"><span aria-hidden="true"></span>The notification package</p>
             <h2 class="reveal">Right people. Right channel. <em>And a reason for everyone left out.</em></h2>
           </div>
           <ul class="notify-cards">
@@ -439,7 +438,7 @@
       </section>
 
       <!-- THRESHOLDS -->
-      <section class="section" id="thresholds">
+      <section class="section thresholds-sec" id="thresholds">
         <div class="container">
           <div class="section-head">
             <p class="eyebrow reveal">Threshold defensibility</p>
@@ -448,7 +447,12 @@
               so a recommendation can be defended to leadership, to employees, and after the fact.</p>
           </div>
           <div class="bezel reveal">
-            <div class="bezel-core table-wrap">
+            <div class="bezel-core">
+              <div class="th-card-head">
+                <p class="th-card-title">Threshold anchors</p>
+                <p class="th-card-sub">Six signals, each tied to a published standard</p>
+              </div>
+              <div class="table-wrap">
               <table class="thresholds">
                 <thead>
                   <tr><th>Signal</th><th>Anchor</th><th>Where it comes from</th></tr>
@@ -486,6 +490,7 @@
                   </tr>
                 </tbody>
               </table>
+              </div>
             </div>
           </div>
         </div>
@@ -493,14 +498,16 @@
 
       <!-- PRINCIPLE + CTA -->
       <section class="section cta">
-        <div class="glow glow-c" aria-hidden="true"></div>
+        <video class="cta-video" src="./assets/cta-fields.mp4" poster="./assets/cta-fields.webp"
+          autoplay muted loop playsinline preload="metadata" aria-hidden="true"></video>
+        <div class="cta-shade" aria-hidden="true"></div>
         <div class="container cta-inner">
           <p class="eyebrow reveal">Our principle</p>
           <h2 class="reveal cta-title">We don’t automate the decision.<br /><em>We make sure it’s a good one.</em></h2>
           <p class="section-lede reveal">The person making the call gets everything in one place, on time.
             Whatever they decide reaches the right people, fast. And the record holds up afterward.</p>
           <div class="hero-actions reveal">
-            <a class="btn btn-primary" href="../login.html">
+            <a class="btn btn-primary" href="/login.html" data-dashboard-link>
               <span>Open dashboard</span>
               <span class="btn-icon" aria-hidden="true">↗</span>
             </a>
@@ -510,11 +517,47 @@
     </main>
 
     <footer class="footer">
-      <div class="container footer-inner">
-        <p class="brand"><span>Fieldcast</span></p>
-        <p class="small muted">Built at Hack Midwest 2026 for the USDA facility closure challenge.
-          Weather data from the <a href="https://www.weather.gov/documentation/services-web-api" target="_blank" rel="noopener">National Weather Service API</a>.
-          Facility and employee data shown here is synthetic.</p>
+      <div class="container">
+        <div class="footer-cols">
+          <div>
+            <p class="footer-head">Product</p>
+            <ul>
+              <li><a href="#how">How it works</a></li>
+              <li><a href="#postures">Postures</a></li>
+              <li><a href="#notify">Notification</a></li>
+              <li><a href="#log">Decision log</a></li>
+            </ul>
+          </div>
+          <div>
+            <p class="footer-head">Data sources</p>
+            <ul>
+              <li><a href="https://www.weather.gov/documentation/services-web-api" target="_blank" rel="noopener">NWS API</a></li>
+              <li><a href="https://www.airnow.gov/" target="_blank" rel="noopener">AirNow</a></li>
+              <li><a href="https://www.opm.gov/policy-data-oversight/snow-dismissal-procedures/" target="_blank" rel="noopener">OPM operating status</a></li>
+              <li><a href="#thresholds">Thresholds</a></li>
+            </ul>
+          </div>
+          <div>
+            <p class="footer-head">Get started</p>
+            <ul>
+              <li><a href="/login.html" data-dashboard-link>Open dashboard</a></li>
+              <li><a href="/login.html">Log in</a></li>
+              <li><a href="#top">Back to top</a></li>
+            </ul>
+          </div>
+          <div>
+            <p class="footer-head">About</p>
+            <ul>
+              <li><span>Hack Midwest 2026</span></li>
+              <li><span>USDA facility closure challenge</span></li>
+              <li><span>Facility and employee data is synthetic</span></li>
+            </ul>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <p>© 2026 Fieldcast. Built at Hack Midwest 2026.</p>
+          <p>Weather data from the National Weather Service</p>
+        </div>
       </div>
     </footer>
   </body>

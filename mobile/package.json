@@ -1,0 +1,34 @@
+{
+  "name": "fieldcast-employee",
+  "version": "1.0.0",
+  "private": true,
+  "main": "expo/AppEntry",
+  "scripts": {
+    "start": "expo start",
+    "start:go": "expo start --go",
+    "start:tunnel": "expo start --tunnel",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "eas:login": "npx eas-cli login",
+    "eas:init": "npx eas-cli init",
+    "eas:register:ios": "npx eas-cli device:create",
+    "build:ios:development": "npx eas-cli build --platform ios --profile development",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "expo": "~57.0.27",
+    "expo-constants": "~57.0.21",
+    "expo-dev-client": "~57.0.19",
+    "expo-location": "~57.0.20",
+    "expo-notifications": "~57.0.22",
+    "expo-secure-store": "~57.0.4",
+    "expo-status-bar": "~57.0.1",
+    "expo-task-manager": "~57.0.21",
+    "react": "19.2.3",
+    "react-native": "0.86.3"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.0",
+    "typescript": "~6.0.3"
+  }
+}

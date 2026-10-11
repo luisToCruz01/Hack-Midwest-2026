@@ -16,17 +16,25 @@ From the project root, start the server:
 python backend/server.py
 ```
 
-Open <http://127.0.0.1:3000>. Set the `PORT` environment variable to use a
-different port.
+Open <http://127.0.0.1:3000> for the landing page (it redirects to `/landing/`).
+The admin dashboard is at <http://127.0.0.1:3000/dashboard>. Set the `PORT`
+environment variable to use a different port.
 
-To run the standalone read-only API for the mobile app, start a second server:
+To run the separate read-only roster API, start a second server:
 
 ```powershell
 python backend/mobile_api.py
 ```
 
 It listens on <http://127.0.0.1:3001> by default. Set `MOBILE_API_HOST` or
-`MOBILE_API_PORT` to change its bind address or port.
+`MOBILE_API_PORT` to change its bind address or port. This read-only endpoint is
+not used by the native employee app.
+
+The native employee app is in `mobile/`. It signs in with an employee ID,
+requests consent for background location sharing, and posts locations to the
+main backend to check for personal NWS alerts. See [mobile/README.md](mobile/README.md)
+for setup. ID-only sign-in and local notifications are prototype behavior;
+production authentication and remote push delivery are not configured.
 
 The Employees page reads the employee roster from SQLite through
 `GET /api/employees`. Employee details shown there come from the database;
@@ -35,6 +43,11 @@ times. Dashboard alert and work-site edits are sample frontend state and reset
 when the page reloads. The mobile server exposes `GET /api/health` and
 `GET /api/employees`; the main server also provides login, weather-alert
 snapshots, and SQLite-backed field reports.
+
+Managers can edit an employee's name, phone, work site, and schedule from the
+Employees page. Changes are saved through `PUT /api/admin/employees/<userId>`.
+Sign in with a manager ID configured in `MANAGER_IDS`; employee IDs are fixed,
+and working status is recalculated from the saved schedule.
 
 The overview work-site selector lists locations from the main database. The
 map geocodes a selected location's address with the U.S. Census Geocoder, then
@@ -55,9 +68,11 @@ Andrew Youssef; the other employees and their phone numbers are synthetic
 sample data. Andrew's supplied phone number is stored as provided. User IDs
 are stored as text to preserve leading zeros. The SQL schema and roster data
 are in `database/schema.sql`. Employee API responses include each person's
-phone number and location ID, name, and address. On startup, the backend
-applies this seed schema to its active database (`closure_call.db` by default),
-alongside the entries and alert snapshot tables.
+phone number and location ID, name, and address. `database/fieldcast.db` is the local SQLite
+roster used by the standalone mobile API. The main dashboard backend uses
+PostgreSQL through `DATABASE_URL`; on its first startup against an empty
+database, it seeds the roster from `database/schema_postgres.sql` and adds its
+application tables.
 
 To create or rebuild the seeded database from the project root (replaces the
 existing database file):
@@ -68,14 +83,14 @@ python -c "import sqlite3; from pathlib import Path; p = Path('database/fieldcas
 
 ## Deploy to Render
 
-The root `render.yaml` is a Render Blueprint for the Python web service. In
-Render, choose **New > Blueprint**, connect this repository, and deploy the
-`fieldcast` service. The Blueprint mounts a persistent disk at `/var/data` and
-stores the SQLite database at `/var/data/closure_call.db`; the roster is
-initialized automatically when the service starts. The service uses a Starter
-plan because Render persistent disks require a paid instance. SQLite on a
-persistent disk is intended for this single service instance, not horizontal
-scaling.
+The root `render.yaml` is a Render Blueprint for the Python web service. Sync
+the Blueprint after changing it so Render uses its build command, which
+installs `requirements.txt` before compiling the backend. Configure the
+Blueprint's `DATABASE_URL` environment variable in Render with the connection
+URL for the existing Render PostgreSQL database; keep that credential in
+Render and do not commit it. The backend uses PostgreSQL, not the SQLite
+`DB_PATH` setting. On first startup with an empty database, it initializes the
+roster from `database/schema_postgres.sql`.
 
 ## Project structure
 

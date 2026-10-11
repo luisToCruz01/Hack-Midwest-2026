@@ -1535,6 +1535,8 @@ ROUTES = [(m, re.compile(p), name, access) for m, p, name, access in [
     ("GET", r"/api/weather", "h_weather", "public"),
     ("GET", r"/api/me", "h_me", "auth"),
     ("GET", r"/api/employees", "h_employees_list", "manager"),
+    ("PUT", r"/api/admin/employees/([0-9]{6})", "h_employee_update", "manager"),
+    ("GET", r"/api/locations", "h_locations", "manager"),
     ("GET", r"/api/locations/(\d+)", "h_location_get", "auth"),
     ("PUT", r"/api/locations/(\d+)", "h_location_put", "manager"),
     ("GET", r"/api/alerts", "h_alerts", "auth"),
@@ -1595,6 +1597,12 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
 
         if method == "GET" and not route.startswith("/api/"):
             if route == "/":
+                # The landing page is the front door; it lives in /landing/ so its relative asset paths resolve.
+                self.send_response(302)
+                self.send_header("Location", "/landing/")
+                self.end_headers()
+                return
+            if route == "/dashboard":
                 self.path = "/index.html"
             super().do_GET()
             return
@@ -1647,18 +1655,112 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
     def h_employees_list(self, employee, query):
         with get_db() as conn:
             rows = conn.execute(
-                "SELECT e.user_id, e.full_name, e.shift_start, e.shift_end, e.days_of_week, "
+                "SELECT e.user_id, e.full_name, e.phone_number, e.shift_start, e.shift_end, e.days_of_week, "
                 "e.location_id, l.name AS location_name, l.address AS location_address, g.tz "
                 "FROM employees e JOIN locations l ON l.location_id = e.location_id "
                 "LEFT JOIN location_geo g ON g.location_id = e.location_id "
                 "ORDER BY lower(e.full_name), e.user_id").fetchall()
         self.send_json([{
             "userId": r["user_id"], "fullName": r["full_name"],
+            "phoneNumber": r["phone_number"],
             "shiftStart": r["shift_start"], "shiftEnd": r["shift_end"],
             "daysOfWeek": r["days_of_week"], "locationId": r["location_id"],
             "locationName": r["location_name"], "locationAddress": r["location_address"],
             "locationTimezone": r["tz"],
         } for r in rows])
+
+    def h_employee_update(self, employee, query, user_id):
+        payload = self.read_json_object()
+        if payload is None:
+            return
+        normalized, error = clean_employee({
+            "userId": user_id,
+            "fullName": payload.get("fullName"),
+            "phone": payload.get("phoneNumber"),
+            "locationId": payload.get("locationId"),
+            "shiftStart": payload.get("shiftStart"),
+            "shiftEnd": payload.get("shiftEnd"),
+            "daysOfWeek": payload.get("daysOfWeek"),
+        })
+        if error:
+            self.send_json({"error": error}, status=400)
+            return
+        if not normalized["phone"]:
+            self.send_json({"error": "A valid phone number is required."}, status=400)
+            return
+
+        with get_db() as conn:
+            if not conn.execute("SELECT 1 FROM locations WHERE location_id = ?",
+                                (normalized["location_id"],)).fetchone():
+                self.send_json({"error": "Selected location was not found."}, status=400)
+                return
+            old = conn.execute(
+                "SELECT full_name, phone_number, location_id, shift_start, shift_end, days_of_week "
+                "FROM employees WHERE user_id = ?", (user_id,),
+            ).fetchone()
+            if old is None:
+                self.send_json({"error": "Employee not found."}, status=404)
+                return
+            conn.execute(
+                "UPDATE employees SET full_name = ?, phone_number = ?, location_id = ?, "
+                "shift_start = ?, shift_end = ?, days_of_week = ? WHERE user_id = ?",
+                (normalized["full_name"], normalized["phone"], normalized["location_id"],
+                 normalized["shift_start"], normalized["shift_end"], normalized["days_of_week"], user_id),
+            )
+            conn.execute(
+                "INSERT INTO employee_flags (user_id, phone) VALUES (?, ?) "
+                "ON CONFLICT (user_id) DO UPDATE SET phone = excluded.phone",
+                (user_id, normalized["phone"]),
+            )
+            updated = conn.execute(
+                "SELECT e.user_id, e.full_name, e.phone_number, e.shift_start, e.shift_end, "
+                "e.days_of_week, e.location_id, l.name AS location_name, "
+                "l.address AS location_address, g.tz "
+                "FROM employees e JOIN locations l ON l.location_id = e.location_id "
+                "LEFT JOIN location_geo g ON g.location_id = e.location_id "
+                "WHERE e.user_id = ?", (user_id,),
+            ).fetchone()
+
+        append_log("employee_updated", {
+            "updatedBy": employee["user_id"],
+            "userId": user_id,
+            "before": dict(old),
+            "after": {
+                "fullName": updated["full_name"],
+                "phoneNumber": updated["phone_number"],
+                "locationId": updated["location_id"],
+                "shiftStart": updated["shift_start"],
+                "shiftEnd": updated["shift_end"],
+                "daysOfWeek": updated["days_of_week"],
+            },
+        })
+        self.send_json({
+            "userId": updated["user_id"],
+            "fullName": updated["full_name"],
+            "phoneNumber": updated["phone_number"],
+            "shiftStart": updated["shift_start"],
+            "shiftEnd": updated["shift_end"],
+            "daysOfWeek": updated["days_of_week"],
+            "locationId": updated["location_id"],
+            "locationName": updated["location_name"],
+            "locationAddress": updated["location_address"],
+            "locationTimezone": updated["tz"],
+        })
+
+    def h_locations(self, employee, query):
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT l.location_id, l.name, l.address, g.lat, g.lon "
+                "FROM locations l LEFT JOIN location_geo g ON g.location_id = l.location_id "
+                "ORDER BY lower(l.name), l.location_id"
+            ).fetchall()
+        self.send_json([{
+            "locationId": row["location_id"],
+            "name": row["name"],
+            "address": row["address"],
+            "latitude": row["lat"],
+            "longitude": row["lon"],
+        } for row in rows])
 
     # ----- facilities -----
     def h_locations(self, employee, query):

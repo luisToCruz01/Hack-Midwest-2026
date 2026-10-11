@@ -216,8 +216,10 @@ CREATE TABLE IF NOT EXISTS employees (
   location_id INTEGER NOT NULL REFERENCES locations(location_id),
   full_name TEXT NOT NULL,
   phone_number TEXT NOT NULL CHECK (length(phone_number) > 0),
-  shift_start TEXT NOT NULL CHECK (shift_start ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'),
-  shift_end TEXT NOT NULL CHECK (shift_end ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'),
+  shift_start TEXT NOT NULL
+    CHECK (shift_start ~ '^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$'),
+  shift_end TEXT NOT NULL
+    CHECK (shift_end ~ '^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$'),
   days_of_week TEXT NOT NULL CHECK (
     days_of_week IN (
       'Mon-Fri',
@@ -228,7 +230,7 @@ CREATE TABLE IF NOT EXISTS employees (
       'Sun-Thu'
     )
   ),
-  CHECK (shift_end > shift_start)
+  CHECK (shift_end::time > shift_start::time)
 );
 
 INSERT INTO employees (
@@ -237,7 +239,7 @@ INSERT INTO employees (
 VALUES
   ('482917', 1, 'Andrew Youssef', '236 518 6769', '06:00', '14:30', 'Mon-Fri'),
   ('305764', 1, 'Dmitri Volkov', '202-555-0100 ext. 0002', '06:30', '15:00', 'Mon-Fri'),
-  ('718203', 1, 'Ayesha Khan', '202-555-0100 ext. 0003', '07:00', '15:30', 'Mon-Thu'),
+  ('718203', 1, 'Jaishankar Kumar', '8328186322', '07:00', '15:30', 'Mon-Thu'),
   ('926541', 1, 'Walter Jennings', '202-555-0100 ext. 0004', '07:00', '15:30', 'Mon-Fri'),
   ('134098', 1, 'Camila Torres', '202-555-0100 ext. 0005', '07:00', '15:30', 'Mon-Fri'),
   ('657320', 1, 'Isaiah Brown', '202-555-0100 ext. 0006', '07:30', '16:00', 'Tue-Sat'),
@@ -332,7 +334,7 @@ last_names(name) AS (
 ),
 existing_names(name) AS (
   VALUES
-    ('Andrew Youssef'), ('Dmitri Volkov'), ('Ayesha Khan'),
+    ('Andrew Youssef'), ('Dmitri Volkov'), ('Jaishankar Kumar'),
     ('Walter Jennings'), ('Camila Torres'), ('Isaiah Brown'),
     ('Mei-Ling Chen'), ('Patrick O’Connell'), ('Fatima Hassan'),
     ('Gabriel Santos'), ('Rebecca Lindqvist'), ('Terrence Hall'),

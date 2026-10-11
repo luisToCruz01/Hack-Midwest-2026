@@ -910,6 +910,10 @@ tbody tr:last-child td {
   background: rgb(118 184 245 / 8%);
 }
 
+.row-actions-cell {
+  text-align: right;
+}
+
 .table-empty {
   margin: 0;
   padding: 2rem;
@@ -1094,6 +1098,10 @@ tbody tr:last-child td {
   box-shadow: 0 24px 80px rgb(0 0 0 / 55%);
 }
 
+.employee-edit-modal {
+  width: min(calc(100% - 2rem), 680px);
+}
+
 .modal::backdrop {
   background: rgb(2 12 17 / 76%);
   backdrop-filter: blur(4px);
@@ -1132,6 +1140,25 @@ tbody tr:last-child td {
 .modal-form .form-actions {
   margin-top: 0;
   padding-top: 1rem;
+}
+
+.employee-edit-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.form-feedback-error {
+  color: #ff9a9a;
+}
+
+.form-feedback:empty {
+  display: none;
+}
+
+.modal-form button:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .visually-hidden {
