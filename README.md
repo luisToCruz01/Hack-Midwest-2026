@@ -36,6 +36,11 @@ when the page reloads. The mobile server exposes `GET /api/health` and
 `GET /api/employees`; the main server also provides login, weather-alert
 snapshots, and SQLite-backed field reports.
 
+Managers can edit an employee's name, phone, work site, and schedule from the
+Employees page. Changes are saved through `PUT /api/admin/employees/<userId>`.
+Sign in with a manager ID configured in `MANAGER_IDS`; employee IDs are fixed,
+and working status is recalculated from the saved schedule.
+
 The overview work-site selector lists locations from the main database. The
 map geocodes a selected location's address with the U.S. Census Geocoder, then
 falls back to its locality through OpenStreetMap Nominatim. If geocoding is

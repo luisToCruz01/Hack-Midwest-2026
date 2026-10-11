@@ -7,6 +7,10 @@ const employeeLocationFilter = document.querySelector("#employee-location-filter
 const overviewLocationSelect = document.querySelector("#overview-location-select");
 const alertDialog = document.querySelector("#alert-dialog");
 const alertForm = document.querySelector("#alert-form");
+const employeeEditDialog = document.querySelector("#employee-edit-dialog");
+const employeeEditForm = document.querySelector("#employee-edit-form");
+const employeeEditFeedback = document.querySelector("#employee-edit-feedback");
+const sessionToken = localStorage.getItem("fieldcastSessionToken") || "";
 
 let employees = [];
 let locations = [];
@@ -16,6 +20,23 @@ let employeeLoadError = "";
 let weatherMap;
 let weatherMapLayers;
 let weatherRequestId = 0;
+
+function authenticatedFetch(url, options = {}) {
+  const headers = new Headers(options.headers);
+  if (sessionToken) headers.set("Authorization", `Bearer ${sessionToken}`);
+  return fetch(url, { ...options, headers });
+}
+
+const loginLink = document.querySelector("#login-link");
+if (sessionToken) {
+  loginLink.textContent = "Sign out";
+  loginLink.href = "#";
+  loginLink.addEventListener("click", (event) => {
+    event.preventDefault();
+    localStorage.removeItem("fieldcastSessionToken");
+    window.location.reload();
+  });
+}
 
 let alerts = [
   { id: 1, title: "Heat advisory in effect", message: "High temperatures are expected this afternoon. Ensure crews take scheduled water breaks and monitor for signs of heat stress.", severity: "High", status: "Open", time: "Today, 9:42 AM", location: "North work area" },
@@ -286,12 +307,13 @@ async function loadSelectedLocationWeather(keepMapView = false) {
 
 function mapDatabaseEmployee(employee) {
   return {
-    id: employee.userId,
-    name: employee.fullName,
-    phoneNumber: employee.phoneNumber,
+    id: String(employee.userId),
+    name: String(employee.fullName),
+    phoneNumber: String(employee.phoneNumber ?? employee.phone ?? ""),
     locationId: String(employee.locationId),
-    locationName: employee.locationName,
-    locationAddress: employee.locationAddress,
+    locationName: String(employee.locationName ?? ""),
+    locationAddress: String(employee.locationAddress ?? ""),
+    daysOfWeek: employee.daysOfWeek,
     schedule: {
       days: expandDaysOfWeek(employee.daysOfWeek),
       startTime: employee.shiftStart,
@@ -468,6 +490,8 @@ function renderEmployees() {
     const location = document.createElement("td");
     const locationName = document.createElement("span");
     const locationAddress = document.createElement("span");
+    const actions = document.createElement("td");
+    const editButton = document.createElement("button");
 
     person.className = "employee-cell";
     avatar.className = "avatar";
@@ -492,9 +516,43 @@ function renderEmployees() {
     locationName.textContent = employee.locationName;
     locationAddress.textContent = employee.locationAddress;
     location.append(locationName, locationAddress);
-    row.append(personCell, schedule, status, location);
+    actions.className = "row-actions-cell";
+    editButton.className = "small-action";
+    editButton.type = "button";
+    editButton.dataset.editEmployee = employee.id;
+    editButton.textContent = "Edit";
+    editButton.disabled = locations.length === 0;
+    editButton.setAttribute("aria-label", `Edit ${employee.name}`);
+    actions.append(editButton);
+    row.append(personCell, schedule, status, location, actions);
     employeeRows.append(row);
   }
+}
+
+function showEmployeeEditor(employee) {
+  employeeEditForm.elements.userId.value = employee.id;
+  employeeEditForm.elements.fullName.value = employee.name;
+  employeeEditForm.elements.phoneNumber.value = employee.phoneNumber;
+  employeeEditForm.elements.locationId.value = employee.locationId;
+  employeeEditForm.elements.shiftStart.value = employee.schedule.startTime;
+  employeeEditForm.elements.shiftEnd.value = employee.schedule.endTime;
+  employeeEditForm.elements.daysOfWeek.value = employee.daysOfWeek;
+  employeeEditFeedback.textContent = "";
+  employeeEditFeedback.classList.remove("form-feedback-error");
+  employeeEditDialog.showModal();
+  employeeEditForm.elements.fullName.focus();
+}
+
+function renderEmployeeLocationEditor() {
+  const locationSelect = employeeEditForm.elements.locationId;
+  const options = locations.map((location) => {
+    const option = document.createElement("option");
+    option.value = location.id;
+    option.textContent = [location.name, location.address].filter(Boolean).join(" — ");
+    return option;
+  });
+  locationSelect.replaceChildren(...options);
+  locationSelect.disabled = options.length === 0;
 }
 
 function renderEmployeeLocationFilter() {
@@ -512,6 +570,7 @@ function renderEmployeeLocationFilter() {
   }
 
   employeeLocationFilter.value = locations.some((location) => location.id === selectedLocation) ? selectedLocation : "all";
+  renderEmployeeLocationEditor();
 }
 
 function renderOverviewLocationOptions() {
@@ -618,6 +677,47 @@ document.querySelectorAll("[data-close-dialog]").forEach((button) => {
   button.addEventListener("click", () => button.closest("dialog").close());
 });
 
+employeeRows.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const button = target.closest("[data-edit-employee]");
+  if (!(button instanceof HTMLButtonElement)) return;
+  const employee = employees.find((item) => item.id === button.dataset.editEmployee);
+  if (employee) showEmployeeEditor(employee);
+});
+
+employeeEditForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const userId = employeeEditForm.elements.userId.value;
+  const submitButton = employeeEditForm.querySelector("button[type='submit']");
+  const formData = new FormData(employeeEditForm);
+  const payload = Object.fromEntries(formData.entries());
+  delete payload.userId;
+  submitButton.disabled = true;
+  employeeEditFeedback.textContent = "Saving employee details...";
+  employeeEditFeedback.classList.remove("form-feedback-error");
+
+  try {
+    const response = await authenticatedFetch(`/api/admin/employees/${encodeURIComponent(userId)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `Save failed with HTTP ${response.status}.`);
+
+    const index = employees.findIndex((employee) => employee.id === userId);
+    if (index !== -1) employees[index] = mapDatabaseEmployee(result);
+    employeeEditDialog.close();
+    renderAll();
+  } catch (error) {
+    employeeEditFeedback.textContent = error instanceof Error ? error.message : "Unable to save employee details.";
+    employeeEditFeedback.classList.add("form-feedback-error");
+  } finally {
+    submitButton.disabled = false;
+  }
+});
+
 employeeSearch.addEventListener("input", renderEmployees);
 employeeFilter.addEventListener("change", renderEmployees);
 employeeLocationFilter.addEventListener("change", renderEmployees);
@@ -703,7 +803,7 @@ window.setInterval(() => {
 
 async function loadEmployees() {
   try {
-    const response = await fetch("/api/employees");
+    const response = await authenticatedFetch("/api/employees");
     if (!response.ok) throw new Error(`Employee API returned HTTP ${response.status}.`);
     const records = await response.json();
     if (!Array.isArray(records)) throw new Error("Employee API response must be an array.");
@@ -713,7 +813,9 @@ async function loadEmployees() {
     renderAll();
   } catch (error) {
     employeesLoading = false;
-    employeeLoadError = "Unable to load employees from the database. Check that the dashboard server and database are available.";
+    employeeLoadError = error instanceof Error && /HTTP (401|403)/.test(error.message)
+      ? "Sign in with an administrator account to view and edit employees."
+      : "Unable to load employees from the database. Check that the dashboard server and database are available.";
     console.error("Failed to load employees from the database.", error);
     renderAll();
   }
@@ -721,7 +823,7 @@ async function loadEmployees() {
 
 async function loadLocations() {
   try {
-    const response = await fetch("/api/locations");
+    const response = await authenticatedFetch("/api/locations");
     if (!response.ok) throw new Error(`Location API returned HTTP ${response.status}.`);
     const records = await response.json();
     if (!Array.isArray(records)) throw new Error("Location API response must be an array.");

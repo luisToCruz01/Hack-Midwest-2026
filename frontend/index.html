@@ -40,7 +40,7 @@
           </button>
           <button class="nav-button" type="button" data-page="worksite">Work site</button>
         </nav>
-        <a class="login-button" href="./login.html">Log in</a>
+        <a class="login-button" id="login-link" href="./login.html">Log in</a>
       </header>
 
       <main class="main-content">
@@ -158,7 +158,7 @@
             <div class="table-scroll">
               <table>
                 <thead>
-                  <tr><th scope="col">Employee</th><th scope="col">Schedule</th><th scope="col">Status</th><th scope="col">Location</th></tr>
+                  <tr><th scope="col">Employee</th><th scope="col">Schedule</th><th scope="col">Status</th><th scope="col">Location</th><th scope="col">Actions</th></tr>
                 </thead>
                 <tbody id="employee-rows"></tbody>
               </table>
@@ -236,6 +236,42 @@
           <label class="field">Details<textarea name="message" maxlength="1000" rows="4" required></textarea></label>
           <label class="field">Severity<select name="severity"><option>Low</option><option selected>Medium</option><option>High</option></select></label>
           <div class="form-actions"><button class="secondary-button" type="button" data-close-dialog>Cancel</button><button class="primary-button" type="submit">Create alert</button></div>
+        </form>
+      </dialog>
+
+      <dialog class="modal employee-edit-modal" id="employee-edit-dialog" aria-labelledby="employee-edit-title">
+        <form class="modal-form" id="employee-edit-form">
+          <div class="card-heading">
+            <div>
+              <p class="eyebrow">EMPLOYEE DIRECTORY</p>
+              <h2 id="employee-edit-title">Edit employee</h2>
+            </div>
+            <button class="icon-button" type="button" data-close-dialog aria-label="Close dialog">×</button>
+          </div>
+          <div class="form-grid">
+            <label class="field">Employee ID<input name="userId" readonly /></label>
+            <label class="field">Full name<input name="fullName" maxlength="120" required /></label>
+            <label class="field field-wide">Phone number<input name="phoneNumber" type="tel" maxlength="20" autocomplete="tel" required /></label>
+            <label class="field field-wide">Work site<select name="locationId" required></select></label>
+            <label class="field">Shift starts<input name="shiftStart" type="time" required /></label>
+            <label class="field">Shift ends<input name="shiftEnd" type="time" required /></label>
+            <label class="field field-wide">Work days
+              <select name="daysOfWeek" required>
+                <option value="Mon-Fri">Monday–Friday</option>
+                <option value="Mon-Thu">Monday–Thursday</option>
+                <option value="Tue-Sat">Tuesday–Saturday</option>
+                <option value="Wed-Sun">Wednesday–Sunday</option>
+                <option value="Tue-Fri">Tuesday–Friday</option>
+                <option value="Sun-Thu">Sunday–Thursday</option>
+              </select>
+            </label>
+          </div>
+          <p class="employee-edit-note">Employee ID cannot be changed. Working status updates automatically from the schedule.</p>
+          <div class="form-actions">
+            <p class="form-feedback" id="employee-edit-feedback" role="status" aria-live="polite"></p>
+            <button class="secondary-button" type="button" data-close-dialog>Cancel</button>
+            <button class="primary-button" type="submit">Save changes</button>
+          </div>
         </form>
       </dialog>
 

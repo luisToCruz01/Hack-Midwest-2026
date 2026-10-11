@@ -22,21 +22,26 @@
           <p class="eyebrow">ACCOUNT ACCESS</p>
           <h1 id="login-title">Welcome back</h1>
           <p class="page-description">Enter your user ID to continue.</p>
-          <form class="login-form" action="#" method="get">
+          <form class="login-form" id="login-form">
             <label for="user-id">User ID</label>
             <input
               id="user-id"
               name="userId"
               type="text"
               autocomplete="username"
+              inputmode="numeric"
+              pattern="[0-9]{6}"
+              maxlength="6"
               placeholder="Enter your user ID"
               required
             />
+            <p class="form-feedback" id="login-feedback" role="status" aria-live="polite"></p>
             <button class="login-submit" type="submit">Continue</button>
           </form>
         </section>
       </main>
       <footer class="app-footer"><span class="footer-dot"></span> FIELDCAST</footer>
     </div>
+    <script src="./login.js" defer></script>
   </body>
 </html>
