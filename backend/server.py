@@ -1542,6 +1542,7 @@ def scan_loop():
 ROUTES = [(m, re.compile(p), name, access) for m, p, name, access in [
     ("GET", r"/api/health", "h_health", "public"),
     ("POST", r"/api/login", "h_login", "public"),
+    ("POST", r"/api/logout", "h_logout", "auth"),
     ("GET", r"/api/locations", "h_locations", "public"),
     ("GET", r"/api/weather", "h_weather", "public"),
     ("GET", r"/api/me", "h_me", "auth"),
@@ -1665,7 +1666,15 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
             sessions[token] = (user_id, monotonic() + SESSION_HOURS * 3600)
         self.send_json({"token": token, "userId": user_id,
                         "name": row["full_name"] if row else "Fieldcast Administrator",
-                        "isManager": is_manager})
+                        "isManager": is_manager},
+                       headers={"Set-Cookie": self.session_cookie(token)})
+
+    def h_logout(self, employee, query):
+        token = self.session_token()
+        if token:
+            with sessions_lock:
+                sessions.pop(token, None)
+        self.send_json({"ok": True}, headers={"Set-Cookie": self.session_cookie("", clear=True)})
 
     def h_me(self, employee, query):
         with get_db() as conn:
@@ -2276,11 +2285,31 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
                         "description": description.strip(), "createdAt": created_at}, status=201)
 
     # ----- shared helpers -----
-    def current_employee(self):
+    def session_cookie(self, token, clear=False):
+        secure = self.headers.get("X-Forwarded-Proto", "").split(",")[0].strip().lower() == "https"
+        cookie = f"fieldcastSession={token}; Path=/; HttpOnly; SameSite=Lax"
+        if clear:
+            cookie += "; Max-Age=0"
+        else:
+            cookie += f"; Max-Age={SESSION_HOURS * 3600}"
+        if secure:
+            cookie += "; Secure"
+        return cookie
+
+    def session_token(self):
         header = self.headers.get("Authorization", "")
-        if not header.startswith("Bearer "):
+        if header.startswith("Bearer "):
+            return header[len("Bearer "):]
+        for cookie in self.headers.get("Cookie", "").split(";"):
+            name, separator, value = cookie.strip().partition("=")
+            if separator and name == "fieldcastSession":
+                return value
+        return ""
+
+    def current_employee(self):
+        token = self.session_token()
+        if not token:
             return None
-        token = header[len("Bearer "):]
         with sessions_lock:
             entry = sessions.get(token)
             if entry and entry[1] < monotonic():
@@ -2311,12 +2340,14 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
             return None
         return payload
 
-    def send_json(self, payload, status=200):
+    def send_json(self, payload, status=200, headers=None):
         response = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(response)))
         self.send_header("Cache-Control", "no-store")
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(response)
 

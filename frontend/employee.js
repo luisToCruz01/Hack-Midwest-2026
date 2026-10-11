@@ -225,6 +225,12 @@ document.querySelector("#employee-sign-out").addEventListener("click", async (ev
       return;
     }
   }
+  try {
+    await apiRequest("/api/logout", { method: "POST" });
+  } catch (error) {
+    setLocationStatus(error instanceof Error ? error.message : "Unable to sign out.", true);
+    return;
+  }
   localStorage.removeItem("fieldcastSessionToken");
   window.location.assign("/landing/");
 });

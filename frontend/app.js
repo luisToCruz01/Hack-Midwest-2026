@@ -42,10 +42,17 @@ const loginLink = document.querySelector("#login-link");
 if (sessionToken) {
   loginLink.textContent = "Sign out";
   loginLink.href = "#";
-  loginLink.addEventListener("click", (event) => {
+  loginLink.addEventListener("click", async (event) => {
     event.preventDefault();
+    try {
+      const response = await authenticatedFetch("/api/logout", { method: "POST" });
+      if (!response.ok) throw new Error(`Sign out failed with HTTP ${response.status}.`);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Unable to sign out.");
+      return;
+    }
     localStorage.removeItem("fieldcastSessionToken");
-    window.location.reload();
+    window.location.assign("/landing/");
   });
 }
 
