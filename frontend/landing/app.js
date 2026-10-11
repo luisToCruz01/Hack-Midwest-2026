@@ -1,5 +1,18 @@
 document.documentElement.classList.add("js");
 
+// Signed-in managers skip the login page; the token is the one login.js stores.
+try {
+  if (localStorage.getItem("fieldcastSessionToken")) {
+    document.querySelectorAll("[data-dashboard-link]").forEach((link) => {
+      link.href = "/dashboard";
+      const label = link.querySelector("span") ?? link;
+      if (/log in/i.test(label.textContent)) label.textContent = label.textContent.replace(/log in/i, "Dashboard");
+    });
+  }
+} catch {
+  // storage blocked: links keep pointing at the login page
+}
+
 const NWS = "https://api.weather.gov";
 const REFRESH_MS = 120_000;
 // NWS "areas" also include marine zones; these are not states or territories.
