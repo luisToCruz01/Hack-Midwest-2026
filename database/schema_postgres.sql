@@ -239,7 +239,7 @@ INSERT INTO employees (
 VALUES
   ('482917', 1, 'Andrew Youssef', '236 518 6769', '06:00', '14:30', 'Mon-Fri'),
   ('305764', 1, 'Dmitri Volkov', '202-555-0100 ext. 0002', '06:30', '15:00', 'Mon-Fri'),
-  ('718203', 1, 'Ayesha Khan', '202-555-0100 ext. 0003', '07:00', '15:30', 'Mon-Thu'),
+  ('718203', 1, 'Jaishankar Kumar', '8328186322', '07:00', '15:30', 'Mon-Thu'),
   ('926541', 1, 'Walter Jennings', '202-555-0100 ext. 0004', '07:00', '15:30', 'Mon-Fri'),
   ('134098', 1, 'Camila Torres', '202-555-0100 ext. 0005', '07:00', '15:30', 'Mon-Fri'),
   ('657320', 1, 'Isaiah Brown', '202-555-0100 ext. 0006', '07:30', '16:00', 'Tue-Sat'),
@@ -334,7 +334,7 @@ last_names(name) AS (
 ),
 existing_names(name) AS (
   VALUES
-    ('Andrew Youssef'), ('Dmitri Volkov'), ('Ayesha Khan'),
+    ('Andrew Youssef'), ('Dmitri Volkov'), ('Jaishankar Kumar'),
     ('Walter Jennings'), ('Camila Torres'), ('Isaiah Brown'),
     ('Mei-Ling Chen'), ('Patrick O’Connell'), ('Fatima Hassan'),
     ('Gabriel Santos'), ('Rebecca Lindqvist'), ('Terrence Hall'),
