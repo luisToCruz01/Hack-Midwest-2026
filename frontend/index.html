@@ -80,7 +80,17 @@
 
           <div class="cc-layout">
             <div class="cc-stage">
-              <div class="cc-map" id="cc-map" role="img" aria-label="Map of service center counties, staff on shift and active NWS alerts"></div>
+              <div class="cc-map" id="cc-map" role="img" tabindex="0" aria-label="United States map with service center counties, staff working today and active NWS alerts. Click to expand."></div>
+              <button class="cc-map-close" id="cc-map-close" type="button" aria-label="Back to the overview cards">
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M20 12H4M10 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                Back to overview
+              </button>
+              <span class="cc-map-hint" aria-hidden="true">Click the map to expand</span>
+              <div class="cc-zoom-controls" aria-label="Map zoom">
+                <button type="button" data-zoom="in" aria-label="Zoom in">+</button>
+                <button type="button" data-zoom="out" aria-label="Zoom out">−</button>
+                <button type="button" data-zoom="reset" aria-label="Reset view">⟲</button>
+              </div>
               <div class="cc-tooltip" id="cc-tooltip" hidden></div>
 
               <div class="cc-grid">
@@ -119,7 +129,8 @@
               </div>
 
               <aside class="cc-legend" aria-label="Map layers">
-                <div class="cc-legend-head">Legend</div>
+                <div class="cc-legend-head">Show on map</div>
+                <div class="cc-layer-filter" id="cc-layer-filter" role="group" aria-label="Map data filter"></div>
                 <div class="cc-segment" role="tablist" aria-label="Map detail">
                   <button type="button" role="tab" data-map-mode="state" aria-selected="false">State</button>
                   <button type="button" role="tab" data-map-mode="county" aria-selected="true">County</button>
