@@ -1643,6 +1643,7 @@ ROUTES = [(m, re.compile(p), name, access) for m, p, name, access in [
     ("GET", r"/api/weather", "h_weather", "public"),
     ("GET", r"/api/me", "h_me", "auth"),
     ("GET", r"/api/employees", "h_employees_list", "manager"),
+    ("GET", r"/api/employees/([0-9]{6})", "h_employee_detail", "manager"),
     ("GET", r"/api/locations/(\d+)", "h_location_get", "auth"),
     ("PUT", r"/api/locations/(\d+)", "h_location_put", "manager"),
     ("GET", r"/api/alerts", "h_alerts", "auth"),
@@ -1657,6 +1658,7 @@ ROUTES = [(m, re.compile(p), name, access) for m, p, name, access in [
     ("POST", r"/api/recommendations/(\d+)/decision", "h_rec_decide", "manager"),
     ("POST", r"/api/admin/employees/import", "h_employees_import", "manager"),
     ("POST", r"/api/admin/employees/contacts", "h_employees_contacts", "manager"),
+    ("POST", r"/api/admin/employees", "h_employee_create", "manager"),
     ("POST", r"/api/location/consent", "h_consent", "auth"),
     ("POST", r"/api/notifications/consent", "h_notifications_consent", "auth"),
     ("POST", r"/api/my/email", "h_my_email", "auth"),
@@ -1771,6 +1773,7 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
             rows = conn.execute(
                 "SELECT e.user_id, e.full_name, e.shift_start, e.shift_end, e.days_of_week, "
                 "e.location_id, l.name AS location_name, l.address AS location_address, g.tz, "
+                "COALESCE(f.phone, e.phone_number) AS phone_number, "
                 "COALESCE(f.location_consent, 0) AS location_sharing, "
                 "CASE WHEN f.location_consent = 1 THEN el.lat END AS shared_lat, "
                 "CASE WHEN f.location_consent = 1 THEN el.lon END AS shared_lon, "
@@ -1788,10 +1791,100 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
             "daysOfWeek": r["days_of_week"], "locationId": r["location_id"],
             "locationName": r["location_name"], "locationAddress": r["location_address"],
             "locationTimezone": r["tz"],
+            "phoneNumber": r["phone_number"] or "",
             "locationSharing": bool(r["location_sharing"]),
             "sharedLatitude": r["shared_lat"], "sharedLongitude": r["shared_lon"],
             "locationUpdatedAt": r["location_updated_at"],
         } for r in rows])
+
+    def h_employee_detail(self, employee, query, user_id):
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT e.user_id, e.full_name, e.phone_number, e.location_id, l.name AS location_name, "
+                "l.address AS location_address, e.shift_start, e.shift_end, e.days_of_week, "
+                "COALESCE(f.email, '') AS email, COALESCE(f.phone, e.phone_number) AS contact_phone, "
+                "COALESCE(f.is_essential, 0) AS is_essential, "
+                "COALESCE(f.telework_eligible, 1) AS telework_eligible, "
+                "COALESCE(f.location_consent, 0) AS location_sharing, "
+                "COALESCE(f.email_consent, 0) AS email_consent, "
+                "CASE WHEN f.location_consent = 1 AND el.updated_at >= ? THEN el.lat END AS shared_lat, "
+                "CASE WHEN f.location_consent = 1 AND el.updated_at >= ? THEN el.lon END AS shared_lon, "
+                "CASE WHEN f.location_consent = 1 AND el.updated_at >= ? THEN el.updated_at END "
+                "AS location_updated_at "
+                "FROM employees e JOIN locations l ON l.location_id = e.location_id "
+                "LEFT JOIN employee_flags f ON f.user_id = e.user_id "
+                "LEFT JOIN employee_location el ON el.user_id = e.user_id "
+                "WHERE e.user_id = ?",
+                ((datetime.now(timezone.utc) - timedelta(hours=LOCATION_TTL_HOURS)).isoformat(),) * 3
+                + (user_id,),
+            ).fetchone()
+        if row is None:
+            self.send_json({"error": "Employee not found."}, status=404)
+            return
+        self.send_json({
+            "userId": row["user_id"], "fullName": row["full_name"],
+            "email": row["email"], "phone": row["contact_phone"],
+            "locationId": row["location_id"], "locationName": row["location_name"],
+            "locationAddress": row["location_address"],
+            "shiftStart": row["shift_start"], "shiftEnd": row["shift_end"],
+            "daysOfWeek": row["days_of_week"],
+            "isEssential": bool(row["is_essential"]),
+            "teleworkEligible": bool(row["telework_eligible"]),
+            "locationSharing": bool(row["location_sharing"]),
+            "emailAlerts": bool(row["email_consent"]),
+            "sharedLatitude": row["shared_lat"], "sharedLongitude": row["shared_lon"],
+            "locationUpdatedAt": row["location_updated_at"],
+        })
+
+    def h_employee_create(self, employee, query):
+        payload = self.read_json_object()
+        if payload is None:
+            return
+        candidate = dict(payload)
+        candidate["userId"] = "100000"
+        cleaned, error = clean_employee(candidate)
+        if error:
+            self.send_json({"error": error}, status=400)
+            return
+        if not cleaned["phone"]:
+            self.send_json({"error": "A phone number is required."}, status=400)
+            return
+
+        with get_db() as conn:
+            if not conn.execute(
+                "SELECT 1 FROM locations WHERE location_id = ?", (cleaned["location_id"],)
+            ).fetchone():
+                self.send_json({"error": "Select a valid work site."}, status=400)
+                return
+            conn.execute("SELECT pg_advisory_xact_lock(814729105441)")
+            available_id = conn.execute(
+                "SELECT lpad(candidate::text, 6, '0') "
+                "FROM generate_series(100000, 999999) AS ids(candidate) "
+                "WHERE NOT EXISTS (SELECT 1 FROM employees WHERE user_id = lpad(candidate::text, 6, '0')) "
+                "ORDER BY candidate LIMIT 1"
+            ).fetchone()
+            if available_id is None:
+                self.send_json({"error": "No unused 6-digit employee IDs are available."}, status=409)
+                return
+            user_id = available_id[0]
+            conn.execute(
+                "INSERT INTO employees (user_id, location_id, full_name, phone_number, "
+                "shift_start, shift_end, days_of_week) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (user_id, cleaned["location_id"], cleaned["full_name"], cleaned["phone"],
+                 cleaned["shift_start"], cleaned["shift_end"], cleaned["days_of_week"]),
+            )
+            conn.execute(
+                "INSERT INTO employee_flags (user_id, is_essential, telework_eligible, email, phone) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (user_id, cleaned["is_essential"] or 0,
+                 1 if cleaned["telework_eligible"] is None else cleaned["telework_eligible"],
+                 cleaned["email"], cleaned["phone"]),
+            )
+        append_log("employee_created", {
+            "createdBy": employee["user_id"], "userId": user_id,
+            "locationId": cleaned["location_id"],
+        })
+        self.send_json({"userId": user_id, "fullName": cleaned["full_name"]}, status=201)
 
     # ----- facilities -----
     def h_locations(self, employee, query):

@@ -131,6 +131,7 @@
               <h1 id="employees-title">Employees</h1>
               <p class="page-description">Browse schedules and shift status. Latest coordinates appear only for employees who opt in to location sharing.</p>
             </div>
+            <button class="primary-button" id="add-employee-button" type="button">＋ Add employee</button>
           </div>
           <section class="content-card table-card" aria-label="Employee directory">
             <div class="table-toolbar">
@@ -159,7 +160,7 @@
             <div class="table-scroll">
               <table>
                 <thead>
-                  <tr><th scope="col">Employee</th><th scope="col">Schedule</th><th scope="col">Status</th><th scope="col">Work site</th><th scope="col">Latest shared location</th></tr>
+                  <tr><th scope="col">Employee</th><th scope="col">Schedule</th><th scope="col">Status</th><th scope="col">Work site</th><th scope="col">Latest shared location</th><th scope="col">Profile</th></tr>
                 </thead>
                 <tbody id="employee-rows"></tbody>
               </table>
@@ -273,6 +274,52 @@
           <label class="field">Severity<select name="severity"><option>Low</option><option selected>Medium</option><option>High</option></select></label>
           <div class="form-actions"><button class="secondary-button" type="button" data-close-dialog>Cancel</button><button class="primary-button" type="submit">Create alert</button></div>
         </form>
+      </dialog>
+
+      <dialog class="modal employee-modal" id="employee-dialog" aria-labelledby="employee-dialog-title">
+        <form class="modal-form" id="employee-form">
+          <div class="card-heading">
+            <div><p class="eyebrow">TEAM MANAGEMENT</p><h2 id="employee-dialog-title">Add employee</h2></div>
+            <button class="icon-button" type="button" data-close-dialog aria-label="Close dialog">×</button>
+          </div>
+          <p class="employee-form-note">A unique six-digit employee ID will be generated when you save. New employees start with weekday 9–5 hours; update these defaults as needed.</p>
+          <div class="form-grid">
+            <label class="field field-wide">Full name<input name="fullName" maxlength="120" autocomplete="name" required /></label>
+            <label class="field">Phone number<input name="phone" type="tel" maxlength="24" autocomplete="tel" placeholder="e.g. 555-123-4567" required /></label>
+            <label class="field">Email address<input name="email" type="email" maxlength="254" autocomplete="email" /></label>
+            <label class="field field-wide">Work site<select name="locationId" id="new-employee-location" required></select></label>
+            <label class="field">Work days
+              <select name="daysOfWeek">
+                <option value="Mon-Fri" selected>Monday–Friday</option>
+                <option value="Mon-Thu">Monday–Thursday</option>
+                <option value="Tue-Sat">Tuesday–Saturday</option>
+                <option value="Wed-Sun">Wednesday–Sunday</option>
+                <option value="Tue-Fri">Tuesday–Friday</option>
+                <option value="Sun-Thu">Sunday–Thursday</option>
+              </select>
+            </label>
+            <label class="field">Start time<input name="shiftStart" type="time" value="09:00" required /></label>
+            <label class="field">End time<input name="shiftEnd" type="time" value="17:00" required /></label>
+            <label class="employee-email-option"><input name="isEssential" type="checkbox" /><span>Essential employee</span></label>
+            <label class="employee-email-option"><input name="teleworkEligible" type="checkbox" checked /><span>Eligible to telework</span></label>
+          </div>
+          <div class="form-actions">
+            <p class="form-feedback" id="employee-form-feedback" role="status" aria-live="polite"></p>
+            <button class="secondary-button" type="button" data-close-dialog>Cancel</button>
+            <button class="primary-button" id="save-employee-button" type="submit">Create employee</button>
+          </div>
+        </form>
+      </dialog>
+
+      <dialog class="modal employee-modal" id="employee-profile-dialog" aria-labelledby="employee-profile-title">
+        <div class="modal-form">
+          <div class="card-heading">
+            <div><p class="eyebrow">EMPLOYEE PROFILE</p><h2 id="employee-profile-title">Loading profile…</h2></div>
+            <button class="icon-button" type="button" data-close-dialog aria-label="Close dialog">×</button>
+          </div>
+          <p class="form-feedback" id="employee-profile-status" role="status" aria-live="polite"></p>
+          <dl class="employee-profile-details" id="employee-profile-details"></dl>
+        </div>
       </dialog>
 
       <footer class="app-footer"><span class="footer-dot"></span> FIELDCAST ADMIN CONSOLE <span class="footer-divider">/</span> FRONTEND PROTOTYPE</footer>

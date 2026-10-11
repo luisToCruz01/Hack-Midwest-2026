@@ -13,6 +13,14 @@ const employeeRows = document.querySelector("#employee-rows");
 const employeeSearch = document.querySelector("#employee-search");
 const employeeFilter = document.querySelector("#employee-filter");
 const employeeLocationFilter = document.querySelector("#employee-location-filter");
+const employeeDialog = document.querySelector("#employee-dialog");
+const employeeForm = document.querySelector("#employee-form");
+const employeeFormFeedback = document.querySelector("#employee-form-feedback");
+const employeeProfileDialog = document.querySelector("#employee-profile-dialog");
+const employeeProfileTitle = document.querySelector("#employee-profile-title");
+const employeeProfileStatus = document.querySelector("#employee-profile-status");
+const employeeProfileDetails = document.querySelector("#employee-profile-details");
+const newEmployeeLocation = document.querySelector("#new-employee-location");
 const overviewLocationSelect = document.querySelector("#overview-location-select");
 const alertDialog = document.querySelector("#alert-dialog");
 const alertForm = document.querySelector("#alert-form");
@@ -328,7 +336,7 @@ function mapDatabaseEmployee(employee) {
     id: employee.userId,
     name: employee.fullName,
     timezone: employee.locationTimezone || workSite.timezone,
-    phoneNumber: employee.phoneNumber,
+    phoneNumber: employee.phoneNumber || "",
     locationId: String(employee.locationId),
     locationName: employee.locationName,
     locationAddress: employee.locationAddress,
@@ -604,6 +612,8 @@ function renderEmployees() {
     const sharedLocation = document.createElement("td");
     const sharedCoordinates = document.createElement("span");
     const sharedTimestamp = document.createElement("span");
+    const profileCell = document.createElement("td");
+    const profileButton = document.createElement("button");
 
     person.className = "employee-cell";
     avatar.className = "avatar";
@@ -645,8 +655,71 @@ function renderEmployees() {
     }
     sharedLocation.append(sharedCoordinates);
     if (sharedTimestamp.textContent) sharedLocation.append(sharedTimestamp);
-    row.append(personCell, schedule, status, location, sharedLocation);
+    profileButton.className = "small-action";
+    profileButton.type = "button";
+    profileButton.dataset.employeeProfile = employee.id;
+    profileButton.textContent = "View profile";
+    profileCell.append(profileButton);
+    row.append(personCell, schedule, status, location, sharedLocation, profileCell);
     employeeRows.append(row);
+  }
+}
+
+function populateEmployeeLocationOptions() {
+  newEmployeeLocation.replaceChildren();
+  for (const location of locations) {
+    const option = document.createElement("option");
+    option.value = location.id;
+    option.textContent = location.name;
+    newEmployeeLocation.append(option);
+  }
+  newEmployeeLocation.disabled = locations.length === 0;
+}
+
+function addProfileDetail(label, value) {
+  const term = document.createElement("dt");
+  const description = document.createElement("dd");
+  term.textContent = label;
+  description.textContent = value || "Not provided";
+  employeeProfileDetails.append(term, description);
+}
+
+async function openEmployeeProfile(userId) {
+  employeeProfileTitle.textContent = `Employee ${userId}`;
+  employeeProfileStatus.textContent = "Loading profile…";
+  employeeProfileDetails.replaceChildren();
+  employeeProfileDialog.showModal();
+  try {
+    const response = await fetch(`/api/employees/${encodeURIComponent(userId)}`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    if (response.status === 401) {
+      sessionStorage.removeItem("fieldcastToken");
+      sessionStorage.removeItem("fieldcastUser");
+      window.location.replace("./login.html");
+      return;
+    }
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || `Profile request failed (HTTP ${response.status}).`);
+    employeeProfileTitle.textContent = result.fullName;
+    employeeProfileStatus.textContent = "Employee details";
+    addProfileDetail("Employee ID", result.userId);
+    addProfileDetail("Phone", result.phone);
+    addProfileDetail("Email", result.email);
+    addProfileDetail("Work site", [result.locationName, result.locationAddress].filter(Boolean).join(" · "));
+    addProfileDetail("Work days", result.daysOfWeek);
+    addProfileDetail("Work hours", `${formatScheduleTime(result.shiftStart)}–${formatScheduleTime(result.shiftEnd)}`);
+    addProfileDetail("Essential employee", result.isEssential ? "Yes" : "No");
+    addProfileDetail("Telework eligible", result.teleworkEligible ? "Yes" : "No");
+    addProfileDetail("Email alerts", result.emailAlerts ? "Opted in" : "Off");
+    if (result.locationSharing && Number.isFinite(result.sharedLatitude) && Number.isFinite(result.sharedLongitude)) {
+      addProfileDetail("Latest shared coordinates", `${result.sharedLatitude}, ${result.sharedLongitude}`);
+      addProfileDetail("Location updated", result.locationUpdatedAt);
+    } else {
+      addProfileDetail("Location sharing", result.locationSharing ? "On; waiting for an update" : "Off");
+    }
+  } catch (error) {
+    employeeProfileStatus.textContent = error instanceof Error ? error.message : "Unable to load employee profile.";
   }
 }
 
@@ -778,6 +851,63 @@ document.querySelectorAll("[data-close-dialog]").forEach((button) => {
 employeeSearch.addEventListener("input", renderEmployees);
 employeeFilter.addEventListener("change", renderEmployees);
 employeeLocationFilter.addEventListener("change", renderEmployees);
+document.querySelector("#add-employee-button").addEventListener("click", () => {
+  employeeForm.reset();
+  employeeFormFeedback.textContent = "";
+  employeeForm.elements.daysOfWeek.value = "Mon-Fri";
+  employeeForm.elements.shiftStart.value = "09:00";
+  employeeForm.elements.shiftEnd.value = "17:00";
+  employeeForm.elements.teleworkEligible.checked = true;
+  newEmployeeLocation.value = locations[0]?.id || "";
+  employeeDialog.showModal();
+  employeeForm.elements.fullName.focus();
+});
+employeeForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const formData = new FormData(employeeForm);
+  const payload = {
+    fullName: String(formData.get("fullName")).trim(),
+    phone: String(formData.get("phone")).trim(),
+    email: String(formData.get("email")).trim(),
+    locationId: Number(formData.get("locationId")),
+    daysOfWeek: String(formData.get("daysOfWeek")),
+    shiftStart: String(formData.get("shiftStart")),
+    shiftEnd: String(formData.get("shiftEnd")),
+    isEssential: employeeForm.elements.isEssential.checked,
+    teleworkEligible: employeeForm.elements.teleworkEligible.checked,
+  };
+  const saveEmployeeButton = document.querySelector("#save-employee-button");
+  saveEmployeeButton.disabled = true;
+  employeeFormFeedback.textContent = "Creating employee profile…";
+  try {
+    const response = await fetch("/api/admin/employees", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${authToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      sessionStorage.removeItem("fieldcastToken");
+      sessionStorage.removeItem("fieldcastUser");
+      window.location.replace("./login.html");
+      return;
+    }
+    if (!response.ok) throw new Error(result.error || `Employee creation failed (HTTP ${response.status}).`);
+    employeeDialog.close();
+    await loadEmployees();
+    await openEmployeeProfile(result.userId);
+  } catch (error) {
+    employeeFormFeedback.textContent = error instanceof Error ? error.message : "Unable to create employee.";
+  } finally {
+    saveEmployeeButton.disabled = false;
+  }
+});
+employeeRows.addEventListener("click", (event) => {
+  const target = event.target;
+  if (target instanceof HTMLButtonElement && target.dataset.employeeProfile) {
+    openEmployeeProfile(target.dataset.employeeProfile);
+  }
+});
 overviewLocationSelect.addEventListener("change", () => {
   selectedLocationId = overviewLocationSelect.value;
   renderOverview();
@@ -907,6 +1037,7 @@ async function loadLocations() {
       latitude: location.latitude,
       longitude: location.longitude,
     }));
+    populateEmployeeLocationOptions();
     renderOverviewLocationOptions();
     renderEmployeeLocationFilter();
     renderAll();
@@ -922,6 +1053,8 @@ async function loadLocations() {
     unavailableOption.textContent = "Unable to load locations";
     overviewLocationSelect.append(unavailableOption);
     overviewLocationSelect.disabled = true;
+    newEmployeeLocation.replaceChildren();
+    newEmployeeLocation.disabled = true;
     console.error("Failed to load locations from the database.", error);
   }
 }

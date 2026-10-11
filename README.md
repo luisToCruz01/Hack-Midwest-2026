@@ -85,6 +85,13 @@ log, including simulated, sent, and failed statuses. Alternatively,
 record means the provider accepted the request; it does not confirm delivery
 to or receipt by the recipient.
 
+Managers can add an employee from the Employees page. A unique six-digit demo
+ID is assigned automatically; name, phone, work site, schedule, and eligibility
+are saved to PostgreSQL. The form defaults to Monday–Friday, 9:00 AM–5:00 PM,
+which managers can edit before saving. New employees are created with email
+alerts and location sharing off. Use **View profile** in the roster to review
+an employee's saved details and any currently shared location.
+
 ## Employee database
 
 `database/fieldcast.db` is a SQLite database seeded with the 200 supplied
