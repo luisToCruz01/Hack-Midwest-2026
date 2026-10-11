@@ -16,8 +16,9 @@ From the project root, start the server:
 python backend/server.py
 ```
 
-Open <http://127.0.0.1:3000>. Set the `PORT` environment variable to use a
-different port.
+Open <http://127.0.0.1:3000> for the landing page (it redirects to `/landing/`).
+The admin dashboard is at <http://127.0.0.1:3000/dashboard>. Set the `PORT`
+environment variable to use a different port.
 
 To run the standalone read-only API for the mobile app, start a second server:
 

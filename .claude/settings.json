@@ -37,7 +37,9 @@
       "Read(//c/Users/luisc/Desktop/framer-mirrors/6-black-arrow/**)",
       "Bash(awk '{print}')",
       "Bash(ffmpeg -loglevel error -y -i C:/Users/luisc/Desktop/framer-mirrors/6-black-arrow/_m/framerusercontent.com/images/ztPzzNeyjdI13f7HoITOWG5b4.jpg -vf scale=2400:-1 -c:v libwebp -quality 80 assets/rain-bg.webp)",
-      "Bash(ffmpeg -loglevel error -y -i C:/Users/luisc/Desktop/framer-mirrors/6-black-arrow/_m/framerusercontent.com/images/ztPzzNeyjdI13f7HoITOWG5b4.jpg -vf scale=1600:-1 -c:v libwebp -quality 70 assets/rain-bg.webp)"
+      "Bash(ffmpeg -loglevel error -y -i C:/Users/luisc/Desktop/framer-mirrors/6-black-arrow/_m/framerusercontent.com/images/ztPzzNeyjdI13f7HoITOWG5b4.jpg -vf scale=1600:-1 -c:v libwebp -quality 70 assets/rain-bg.webp)",
+      "Bash(ffmpeg -loglevel error -y -i C:/Users/luisc/Desktop/framer-mirrors/combined/assets/harvest.mp4 -an -vf \"scale=1280:-2,fps=30\" -c:v libx264 -preset slow -crf 31 -pix_fmt yuv420p -movflags +faststart cta-fields.mp4)",
+      "Bash(ffprobe -v error -show_entries format=duration -of csv=p=0 cta-fields.mp4)"
     ]
   }
 }

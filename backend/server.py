@@ -1597,6 +1597,12 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
 
         if method == "GET" and not route.startswith("/api/"):
             if route == "/":
+                # The landing page is the front door; it lives in /landing/ so its relative asset paths resolve.
+                self.send_response(302)
+                self.send_header("Location", "/landing/")
+                self.end_headers()
+                return
+            if route == "/dashboard":
                 self.path = "/index.html"
             super().do_GET()
             return
