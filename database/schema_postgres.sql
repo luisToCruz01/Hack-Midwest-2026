@@ -213,8 +213,10 @@ CREATE TABLE IF NOT EXISTS employees (
   location_id INTEGER NOT NULL REFERENCES locations(location_id),
   full_name TEXT NOT NULL,
   phone_number TEXT NOT NULL CHECK (length(phone_number) > 0),
-  shift_start TEXT NOT NULL CHECK (shift_start ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'),
-  shift_end TEXT NOT NULL CHECK (shift_end ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'),
+  shift_start TEXT NOT NULL
+    CHECK (shift_start ~ '^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$'),
+  shift_end TEXT NOT NULL
+    CHECK (shift_end ~ '^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$'),
   days_of_week TEXT NOT NULL CHECK (
     days_of_week IN (
       'Mon-Fri',
@@ -225,7 +227,7 @@ CREATE TABLE IF NOT EXISTS employees (
       'Sun-Thu'
     )
   ),
-  CHECK (shift_end > shift_start)
+  CHECK (shift_end::time > shift_start::time)
 );
 CREATE INDEX ix_employees_location ON employees(location_id);
 

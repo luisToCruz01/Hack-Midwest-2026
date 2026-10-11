@@ -55,9 +55,11 @@ Andrew Youssef; the other employees and their phone numbers are synthetic
 sample data. Andrew's supplied phone number is stored as provided. User IDs
 are stored as text to preserve leading zeros. The SQL schema and roster data
 are in `database/schema.sql`. Employee API responses include each person's
-phone number and location ID, name, and address. On startup, the backend
-applies this seed schema to its active database (`closure_call.db` by default),
-alongside the entries and alert snapshot tables.
+phone number and location ID, name, and address. `database/fieldcast.db` is the local SQLite
+roster used by the standalone mobile API. The main dashboard backend uses
+PostgreSQL through `DATABASE_URL`; on its first startup against an empty
+database, it seeds the roster from `database/schema_postgres.sql` and adds its
+application tables.
 
 To create or rebuild the seeded database from the project root (replaces the
 existing database file):
@@ -68,14 +70,14 @@ python -c "import sqlite3; from pathlib import Path; p = Path('database/fieldcas
 
 ## Deploy to Render
 
-The root `render.yaml` is a Render Blueprint for the Python web service. In
-Render, choose **New > Blueprint**, connect this repository, and deploy the
-`fieldcast` service. The Blueprint mounts a persistent disk at `/var/data` and
-stores the SQLite database at `/var/data/closure_call.db`; the roster is
-initialized automatically when the service starts. The service uses a Starter
-plan because Render persistent disks require a paid instance. SQLite on a
-persistent disk is intended for this single service instance, not horizontal
-scaling.
+The root `render.yaml` is a Render Blueprint for the Python web service. Sync
+the Blueprint after changing it so Render uses its build command, which
+installs `requirements.txt` before compiling the backend. Configure the
+Blueprint's `DATABASE_URL` environment variable in Render with the connection
+URL for the existing Render PostgreSQL database; keep that credential in
+Render and do not commit it. The backend uses PostgreSQL, not the SQLite
+`DB_PATH` setting. On first startup with an empty database, it initializes the
+roster from `database/schema_postgres.sql`.
 
 ## Project structure
 
