@@ -22,16 +22,26 @@
       defer
     ></script>
     <script src="./app.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js" defer></script>
+    <script src="./overview.js" defer></script>
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <a class="brand" href="./index.html" aria-label="Fieldcast admin dashboard">
-          <span class="brand-mark" aria-hidden="true">W</span>
-          <span>Fieldcast</span>
-          <span class="brand-divider" aria-hidden="true"></span>
-          <span class="brand-section">Admin</span>
-        </a>
+        <div class="topbar-left">
+          <a class="brand" href="/landing/" aria-label="Fieldcast home">
+            <span class="brand-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3.2" /><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" /></svg>
+            </span>
+            <span>fieldcast</span>
+          </a>
+          <span class="topbar-sep" aria-hidden="true"></span>
+          <a class="icon-chip" href="/landing/" aria-label="Back to the landing page">
+            <svg viewBox="0 0 24 24" width="18" height="18"><path d="M20 12H4M10 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          </a>
+          <p class="topbar-title">Command center <span>/ Admin</span></p>
+        </div>
         <nav class="page-nav" aria-label="Admin navigation">
           <button class="nav-button" type="button" data-page="overview" aria-current="page">Overview</button>
           <button class="nav-button" type="button" data-page="employees">Employees</button>
@@ -40,87 +50,161 @@
           </button>
           <button class="nav-button" type="button" data-page="worksite">Work site</button>
         </nav>
-        <a class="login-button" id="login-link" href="./login.html">Log in</a>
+        <div class="topbar-right">
+          <button class="icon-chip bell" type="button" data-open-page="alerts" aria-label="Open alerts">
+            <svg viewBox="0 0 24 24" width="18" height="18"><path d="M6 9a6 6 0 1 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9M10 20a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            <span class="bell-count" id="open-alert-count">0</span>
+          </button>
+          <div class="user-chip">
+            <span class="user-avatar" id="user-avatar" aria-hidden="true">··</span>
+            <span class="user-copy"><strong id="user-name">Guest</strong><span id="user-id">Not signed in</span></span>
+          </div>
+          <a class="login-button" id="login-link" href="./login.html">Log in</a>
+        </div>
       </header>
 
       <main class="main-content">
-        <section class="page-view" data-view="overview" aria-labelledby="overview-title">
-          <div class="page-heading">
-            <div>
-              <p class="eyebrow">ADMIN CONSOLE <span class="eyebrow-dot"></span> OVERVIEW</p>
-              <h1 id="overview-title">Dashboard</h1>
-              <p class="page-description">A clear view of your team, site, and active safety alerts.</p>
+        <section class="page-view cc" data-view="overview" aria-labelledby="overview-title">
+          <h1 class="visually-hidden" id="overview-title">Command center overview</h1>
+          <div class="cc-toolbar">
+            <div class="cc-tab"><span>Overview</span><span class="cc-tab-meta" id="cc-coverage">Loading coverage…</span></div>
+            <label class="cc-search">
+              <span class="visually-hidden">Find a service center on the map</span>
+              <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="m16 16 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+              <input id="cc-search" type="search" placeholder="Find a service center" autocomplete="off" />
+              <span class="cc-search-count" id="cc-search-count"></span>
+            </label>
+            <span class="cc-widgets"><b>6</b> Widgets</span>
+          </div>
+
+          <div class="cc-layout">
+            <div class="cc-stage">
+              <div class="cc-map" id="cc-map" role="img" aria-label="Map of service center counties, staff on shift and active NWS alerts"></div>
+              <div class="cc-tooltip" id="cc-tooltip" hidden></div>
+
+              <div class="cc-grid">
+                <article class="cc-card cc-kpi">
+                  <p class="cc-card-title">Employees</p>
+                  <p class="cc-kpi-value" id="employee-count">0</p>
+                  <p class="cc-kpi-note" id="active-employee-note">Loading roster…</p>
+                </article>
+                <article class="cc-card cc-kpi">
+                  <p class="cc-card-title">On shift now</p>
+                  <p class="cc-kpi-value" id="cc-onshift-pct">–</p>
+                  <p class="cc-kpi-note" id="cc-onshift-note">Share of the roster</p>
+                </article>
+                <article class="cc-card cc-kpi">
+                  <p class="cc-card-title">Active NWS alerts</p>
+                  <p class="cc-kpi-value" id="cc-alert-count">–</p>
+                  <p class="cc-kpi-note" id="cc-alert-note">Coverage area</p>
+                </article>
+
+                <article class="cc-card cc-donut-card">
+                  <div class="cc-card-head"><p class="cc-card-title">Works today vs off today</p><span class="cc-badge" id="cc-donut-badge">–</span></div>
+                  <svg class="cc-chart" id="cc-donut" viewBox="0 0 360 250" role="img" aria-label="Employees who work today versus employees off today"></svg>
+                </article>
+                <article class="cc-card cc-radar-card">
+                  <div class="cc-card-head"><p class="cc-card-title">Staffing by day of week</p><span class="cc-badge">7</span></div>
+                  <svg class="cc-chart" id="cc-radar" viewBox="0 0 420 270" role="img" aria-label="Scheduled employees per weekday, early versus late shifts"></svg>
+                </article>
+
+                <article class="cc-card cc-bubble-card">
+                  <div class="cc-card-head">
+                    <p class="cc-card-title">Roster by work pattern and start time</p>
+                    <span class="cc-legend-inline"><i class="dot-on"></i> Works today <i class="dot-later"></i> Off today</span>
+                  </div>
+                  <svg class="cc-chart" id="cc-bubbles" viewBox="0 0 900 400" role="img" aria-label="Employees by work pattern and shift start time, coloured by whether they work today"></svg>
+                </article>
+              </div>
+
+              <aside class="cc-legend" aria-label="Map layers">
+                <div class="cc-legend-head">Legend</div>
+                <div class="cc-segment" role="tablist" aria-label="Map detail">
+                  <button type="button" role="tab" data-map-mode="state" aria-selected="false">State</button>
+                  <button type="button" role="tab" data-map-mode="county" aria-selected="true">County</button>
+                </div>
+                <label class="cc-layer"><input type="checkbox" id="cc-layer-staff" checked /> <span>Scheduled today</span></label>
+                <div class="cc-layer-body">
+                  <p class="cc-layer-stat"><b id="cc-avg-onshift">–</b> avg. working today per center</p>
+                  <div class="cc-gradient"></div>
+                  <div class="cc-scale"><span>50%</span><span>60</span><span>70</span><span>80</span><span>90%</span></div>
+                </div>
+                <label class="cc-layer"><input type="checkbox" id="cc-layer-alerts" checked /> <span>NWS alerts</span></label>
+                <div class="cc-layer-body">
+                  <svg class="cc-sev" id="cc-severity" viewBox="0 0 240 70" role="img" aria-label="Active alerts by severity"></svg>
+                </div>
+              </aside>
             </div>
-            <span class="location-chip"><span aria-hidden="true">⌖</span><span id="overview-site-name">Work site not set</span></span>
+
+            <aside class="cc-insights" id="cc-insights" aria-labelledby="cc-insights-title">
+              <div class="cc-insights-head">
+                <span class="cc-insights-mark" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" fill="currentColor" /></svg>
+                </span>
+                <h2 id="cc-insights-title">Insights</h2>
+                <button class="icon-chip" type="button" id="cc-refresh" aria-label="Refresh NWS alerts">
+                  <svg viewBox="0 0 24 24" width="16" height="16"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                </button>
+              </div>
+              <div class="cc-insights-summary">
+                <p class="cc-summary-link" id="cc-summary-line">Live NWS · loading…</p>
+                <p class="cc-summary-time" id="cc-summary-time"></p>
+              </div>
+              <div class="cc-insight-stack" id="cc-insight-stack" aria-live="polite"></div>
+              <div class="cc-pager">
+                <button type="button" class="cc-pager-arrow" data-insight-step="-1" aria-label="Previous insight">‹</button>
+                <div class="cc-pager-pages" id="cc-pager-pages"></div>
+                <button type="button" class="cc-pager-arrow" data-insight-step="1" aria-label="Next insight">›</button>
+              </div>
+              <p class="cc-disclaimer">Calculated from the roster and live National Weather Service alerts. Double-check before acting.</p>
+              <div class="cc-prompts">
+                <p>Jump to</p>
+                <button type="button" data-open-page="employees">Employee roster</button>
+                <button type="button" data-open-page="alerts">Safety alerts</button>
+                <button type="button" data-open-page="worksite">Work site</button>
+              </div>
+            </aside>
           </div>
 
-          <div class="metric-grid">
-            <article class="metric-card">
-              <div class="card-label"><span class="card-icon icon-green" aria-hidden="true">◎</span> Employees</div>
-              <p class="metric-value" id="employee-count">0</p>
-              <p class="metric-note" id="active-employee-note">0 working now · 0 on leave</p>
-            </article>
-            <article class="metric-card">
-              <div class="card-label"><span class="card-icon icon-amber" aria-hidden="true">!</span> Open alerts</div>
-              <p class="metric-value" id="open-alert-count">0</p>
-              <p class="metric-note">Require administrator attention</p>
-            </article>
-            <article class="metric-card">
-              <div class="card-label"><span class="card-icon icon-blue" aria-hidden="true">☼</span> Weather feed</div>
-              <p class="metric-value metric-value-small">Not connected</p>
-              <p class="metric-note">Weather provider setup required</p>
-            </article>
-          </div>
-
-          <div class="content-grid">
-            <section class="content-card" aria-labelledby="recent-alerts-title">
-              <div class="card-heading">
+          <div class="cc-lower">
+            <section class="cc-card cc-site" aria-labelledby="site-summary-title">
+              <div class="cc-card-head">
                 <div>
-                  <p class="eyebrow">NEEDS ATTENTION</p>
-                  <h2 id="recent-alerts-title">Recent alerts</h2>
+                  <p class="cc-eyebrow">Live National Weather Service</p>
+                  <h2 class="cc-card-title" id="site-summary-title">Selected site conditions</h2>
+                </div>
+                <span class="location-chip"><span aria-hidden="true">⌖</span><span id="overview-site-name">Work site not set</span></span>
+              </div>
+              <div class="cc-site-body">
+                <div class="cc-site-info">
+                  <label class="filter-field overview-location-picker">
+                    <span class="visually-hidden">Choose a work site location</span>
+                    <select id="overview-location-select" disabled>
+                      <option value="">Loading locations...</option>
+                    </select>
+                  </label>
+                  <div class="site-address-summary" id="overview-site-address"></div>
+                  <dl class="site-details" id="overview-site-details"></dl>
+                  <p class="weather-map-location" id="weather-map-location">Choose a work site to view its local weather.</p>
+                  <p class="weather-map-status" id="weather-map-status" role="status" aria-live="polite">Waiting for a selected location.</p>
+                  <div id="weather-summary" class="weather-summary" aria-live="polite"></div>
+                </div>
+                <div class="overview-map-frame">
+                  <div id="weather-map" role="region" aria-label="Map with selected site NWS weather and active alert overlays"></div>
+                </div>
+              </div>
+            </section>
+            <section class="cc-card cc-recent" aria-labelledby="recent-alerts-title">
+              <div class="cc-card-head">
+                <div>
+                  <p class="cc-eyebrow">Needs attention</p>
+                  <h2 class="cc-card-title" id="recent-alerts-title">Recent alerts</h2>
                 </div>
                 <button class="text-button" type="button" data-open-page="alerts">View all</button>
               </div>
               <div id="overview-alerts" class="alert-preview-list"></div>
             </section>
-            <section class="content-card site-summary-card" aria-labelledby="site-summary-title">
-              <div class="card-heading">
-                <div>
-                  <p class="eyebrow">SITE DETAILS</p>
-                  <h2 id="site-summary-title">Work site</h2>
-                </div>
-                <button class="text-button" type="button" data-open-page="worksite">Edit</button>
-              </div>
-              <label class="filter-field overview-location-picker">
-                <span class="visually-hidden">Choose a work site location</span>
-                <select id="overview-location-select" disabled>
-                  <option value="">Loading locations...</option>
-                </select>
-              </label>
-              <div class="site-address-summary" id="overview-site-address"></div>
-              <dl class="site-details" id="overview-site-details"></dl>
-            </section>
           </div>
-          <section class="content-card overview-map-card" aria-labelledby="overview-map-title">
-            <div class="card-heading">
-              <div>
-                <p class="eyebrow">LIVE NATIONAL WEATHER SERVICE</p>
-                <h2 id="overview-map-title">Selected site conditions</h2>
-              </div>
-            </div>
-            <p class="weather-map-location" id="weather-map-location">Choose a work site to view its local weather.</p>
-            <p class="weather-map-status" id="weather-map-status" role="status" aria-live="polite">Waiting for a selected location.</p>
-            <div id="weather-summary" class="weather-summary" aria-live="polite"></div>
-            <div class="overview-map-frame">
-              <div id="weather-map" role="region" aria-label="Map with selected site NWS weather and active alert overlays"></div>
-            </div>
-            <div class="weather-map-legend" aria-label="Map legend">
-              <span><i class="legend-site" aria-hidden="true"></i> Selected site</span>
-              <span><i class="legend-alert" aria-hidden="true"></i> Active NWS alert area</span>
-              <span>Wind arrow points toward wind travel direction</span>
-            </div>
-          </section>
-          <p class="prototype-note">Dashboard prototype · Alerts and work-site edits are temporary; the employee roster comes from the database.</p>
         </section>
 
         <section class="page-view" data-view="employees" aria-labelledby="employees-title" hidden>

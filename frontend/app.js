@@ -657,6 +657,7 @@ function renderAll() {
   renderOverview();
   renderEmployees();
   renderAlerts();
+  window.renderCommandCenter?.(); // overview.js charts and map
 }
 
 for (const button of navigationButtons) {
