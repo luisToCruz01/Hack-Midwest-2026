@@ -219,8 +219,10 @@ CREATE TABLE IF NOT EXISTS employee_flags (
     telework_eligible INTEGER NOT NULL DEFAULT 1,
     email TEXT,
     phone TEXT,
-    location_consent INTEGER NOT NULL DEFAULT 0
+    location_consent INTEGER NOT NULL DEFAULT 0,
+    email_notifications_enabled INTEGER NOT NULL DEFAULT 0
 );
+ALTER TABLE employee_flags ADD COLUMN IF NOT EXISTS email_notifications_enabled INTEGER NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS employee_location (
     user_id TEXT PRIMARY KEY REFERENCES employees(user_id),
     lat DOUBLE PRECISION NOT NULL,
@@ -1054,10 +1056,10 @@ def pick_channels(emp, urgency):
         if emp["phone"]:
             channels.append("sms")
     else:
-        if emp["email"]:
-            channels.append("email")
         if emp["location_consent"]:
             channels.append("push")
+    if emp["email"] and emp["email_notifications_enabled"]:
+        channels.append("email")
     return channels or ["none_on_file"]
 
 
@@ -1096,7 +1098,8 @@ def build_package(loc, posture, now_local, headline):
             """SELECT e.user_id, e.full_name, e.shift_start, e.shift_end, e.days_of_week,
                       COALESCE(f.is_essential, 0) AS is_essential,
                       COALESCE(f.telework_eligible, 1) AS telework_eligible,
-                      f.email, f.phone, COALESCE(f.location_consent, 0) AS location_consent
+                      f.email, f.phone, COALESCE(f.location_consent, 0) AS location_consent,
+                      COALESCE(f.email_notifications_enabled, 0) AS email_notifications_enabled
                FROM employees e LEFT JOIN employee_flags f ON f.user_id = e.user_id
                WHERE e.location_id = ? ORDER BY e.user_id""",
             (loc["location_id"],),
@@ -1234,6 +1237,10 @@ def process_location(user_id, lat, lon):
     now = datetime.now(timezone.utc)
     with get_db() as conn:
         prev = conn.execute("SELECT updated_at FROM employee_location WHERE user_id = ?", (user_id,)).fetchone()
+        flags = conn.execute(
+            "SELECT email, email_notifications_enabled FROM employee_flags WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
     if prev:
         try:
             age = (now - datetime.fromisoformat(prev["updated_at"])).total_seconds()
@@ -1253,14 +1260,17 @@ def process_location(user_id, lat, lon):
     result = get_cell_alerts(key, clat, clon)
     urgent = [a for a in result["alerts"] if alert_matches(PERSONAL_ALERT_RULE, a) and a.get("id")]
     new_notifications = []
+    notification_channels = "push,email" if (
+        flags and flags["email"] and flags["email_notifications_enabled"]
+    ) else "push"
 
     for alert in urgent:
         # Step 1: the immediate alert, once per person per NWS alert.
         message = compose_personal_message(alert)
         with get_db() as conn:
-            notif_id = queue_notification(conn, "personal", user_id, "push", message, alert_id=alert["id"])
+            notif_id = queue_notification(conn, "personal", user_id, notification_channels, message, alert_id=alert["id"])
         if notif_id:
-            status = deliver(notif_id, "personal", user_id, "push", message)
+            status = deliver(notif_id, "personal", user_id, notification_channels, message)
             append_log("personal_alert", {"userId": user_id, "alertId": alert["id"],  # no coordinates
                                           "event": alert.get("event"), "severity": alert.get("severity"),
                                           "snapshotId": result["snapshotId"]})
@@ -1281,10 +1291,10 @@ def process_location(user_id, lat, lon):
             continue
         shelter_message = compose_shelter_message(alert, shelter_result["shelters"])
         with get_db() as conn:
-            shelter_notif_id = queue_notification(conn, "shelter", user_id, "push", shelter_message,
+            shelter_notif_id = queue_notification(conn, "shelter", user_id, notification_channels, shelter_message,
                                                   alert_id=followup_key)
         if shelter_notif_id:
-            status = deliver(shelter_notif_id, "shelter", user_id, "push", shelter_message)
+            status = deliver(shelter_notif_id, "shelter", user_id, notification_channels, shelter_message)
             append_log("shelter_followup", {"userId": user_id, "alertId": alert["id"],
                                             "shelterCount": len(shelter_result["shelters"])})
             new_notifications.append({"alertId": followup_key, "kind": "shelter", "event": alert.get("event"),
@@ -1535,6 +1545,7 @@ ROUTES = [(m, re.compile(p), name, access) for m, p, name, access in [
     ("GET", r"/api/locations", "h_locations", "public"),
     ("GET", r"/api/weather", "h_weather", "public"),
     ("GET", r"/api/me", "h_me", "auth"),
+    ("PUT", r"/api/me/notification-preferences", "h_notification_preferences_update", "auth"),
     ("GET", r"/api/employees", "h_employees_list", "manager"),
     ("GET", r"/api/admin/employee-locations", "h_employee_locations", "manager"),
     ("PUT", r"/api/admin/employees/([0-9]{6})", "h_employee_update", "manager"),
@@ -1655,7 +1666,8 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
         with get_db() as conn:
             row = conn.execute(
                 "SELECT e.user_id, e.full_name, e.location_id, e.shift_start, e.shift_end, e.days_of_week, "
-                "COALESCE(f.location_consent, 0) AS consent "
+                "COALESCE(f.location_consent, 0) AS consent, f.email, "
+                "COALESCE(f.email_notifications_enabled, 0) AS email_notifications_enabled "
                 "FROM employees e LEFT JOIN employee_flags f ON f.user_id = e.user_id WHERE e.user_id = ?",
                 (employee["user_id"],),
             ).fetchone()
@@ -1663,7 +1675,37 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
                         "locationId": row["location_id"], "shiftStart": row["shift_start"],
                         "shiftEnd": row["shift_end"], "daysOfWeek": row["days_of_week"],
                         "locationSharing": bool(row["consent"]),
+                        "email": row["email"] or "",
+                        "emailNotificationsEnabled": bool(row["email_notifications_enabled"]),
                         "isManager": row["user_id"] in MANAGER_IDS})
+
+    def h_notification_preferences_update(self, employee, query):
+        payload = self.read_json_object()
+        if payload is None:
+            return
+        email = payload.get("email")
+        enabled = payload.get("emailNotificationsEnabled")
+        if not isinstance(email, str) or len(email.strip()) > 254:
+            self.send_json({"error": "Enter a valid email address."}, status=400)
+            return
+        email = email.strip()
+        if not isinstance(enabled, bool):
+            self.send_json({"error": "emailNotificationsEnabled must be true or false."}, status=400)
+            return
+        if enabled and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            self.send_json({"error": "Enter a valid email address to enable email notifications."}, status=400)
+            return
+        if email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            self.send_json({"error": "Enter a valid email address."}, status=400)
+            return
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO employee_flags (user_id, email, email_notifications_enabled) VALUES (?, ?, ?) "
+                "ON CONFLICT(user_id) DO UPDATE SET email = excluded.email, "
+                "email_notifications_enabled = excluded.email_notifications_enabled",
+                (employee["user_id"], email or None, int(enabled)),
+            )
+        self.send_json({"email": email, "emailNotificationsEnabled": enabled})
 
     # ----- roster (dashboard) -----
     def h_employees_list(self, employee, query):

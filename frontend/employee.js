@@ -85,6 +85,14 @@ async function loadProfile() {
     document.querySelector("#employee-work-days").textContent = profile.daysOfWeek;
     document.querySelector("#employee-shift").textContent =
       `${profile.shiftStart}–${profile.shiftEnd}`;
+    document.querySelector("#employee-email").value = profile.email || "";
+    document.querySelector("#employee-email-enabled").checked = profile.emailNotificationsEnabled;
+    document.querySelector("#employee-email-enabled").addEventListener("change", () => {
+      const checkbox = document.querySelector("#employee-email-enabled");
+      if (checkbox.checked && !document.querySelector("#employee-email").value.trim()) {
+        document.querySelector("#employee-email").focus();
+      }
+    });
 
     const button = document.querySelector("#employee-location-button");
     button.textContent = profile.locationSharing ? "Resume sharing on this device" : "Enable location sharing";
@@ -175,6 +183,34 @@ document.querySelector("#employee-location-button").addEventListener("click", as
 });
 
 document.querySelector("#employee-refresh-alerts").addEventListener("click", refreshAlerts);
+document.querySelector("#employee-email-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const submitButton = document.querySelector("#employee-email-save");
+  const status = document.querySelector("#employee-email-status");
+  const email = form.elements.email.value.trim();
+  const emailNotificationsEnabled = form.elements.emailNotificationsEnabled.checked;
+  submitButton.disabled = true;
+  status.classList.remove("weather-map-status-error");
+  status.textContent = "Saving your email preferences…";
+  try {
+    const preferences = await apiRequest("/api/me/notification-preferences", {
+      method: "PUT",
+      body: JSON.stringify({ email, emailNotificationsEnabled }),
+    });
+    profile.email = preferences.email;
+    profile.emailNotificationsEnabled = preferences.emailNotificationsEnabled;
+    status.textContent = preferences.emailNotificationsEnabled
+      ? "Email notifications are enabled for this address."
+      : "Email preferences saved. Email notifications are off.";
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : "Unable to save email preferences.";
+    status.classList.add("weather-map-status-error");
+  } finally {
+    submitButton.disabled = false;
+  }
+});
+
 document.querySelector("#employee-sign-out").addEventListener("click", async (event) => {
   event.preventDefault();
   if (watchId !== null) {

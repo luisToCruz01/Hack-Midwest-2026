@@ -1254,6 +1254,38 @@ tbody tr:last-child td {
   font-size: 0.76rem;
 }
 
+.employee-email-card {
+  margin-top: 1rem;
+}
+
+.employee-email-form {
+  display: grid;
+  max-width: 520px;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+
+.employee-email-opt-in {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: fit-content;
+  color: #dce9e5;
+  font-size: 0.82rem;
+}
+
+.employee-email-opt-in input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--green);
+}
+
+.employee-email-actions {
+  justify-content: flex-start;
+  margin-top: 0;
+  padding-top: 0.8rem;
+}
+
 .employee-alerts-card {
   margin-top: 1rem;
 }
