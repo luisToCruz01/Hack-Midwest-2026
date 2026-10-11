@@ -1706,9 +1706,14 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
             getattr(self, name)(employee, query, *match.groups())
             return
 
+        if method == "GET" and route == "/":
+            self.send_response(302)
+            self.send_header("Location", "/landing/")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+
         if method == "GET" and not route.startswith("/api/"):
-            if route == "/":
-                self.path = "/index.html"
             super().do_GET()
             return
         self.send_json({"error": "API route not found."}, status=404)
