@@ -24,7 +24,6 @@ try {
   // storage blocked: links keep pointing at the login page
 }
 
-const NWS = "https://api.weather.gov";
 const REFRESH_MS = 120_000;
 // NWS "areas" also include marine zones; these are not states or territories.
 const MARINE_AREAS = new Set(["AM", "AN", "GM", "LC", "LE", "LH", "LM", "LO", "LS", "PH", "PK", "PM", "PS", "PZ", "SL"]);
@@ -41,12 +40,6 @@ function timeAgo(iso) {
 
 function escapeHtml(text = "") {
   return text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-}
-
-async function getJson(path) {
-  const response = await fetch(`${NWS}${path}`, { headers: { Accept: "application/geo+json" } });
-  if (!response.ok) throw new Error(`NWS responded ${response.status}`);
-  return response.json();
 }
 
 function renderAlerts(features) {
@@ -90,10 +83,12 @@ function renderTicker(features) {
 async function loadLive() {
   const updated = document.getElementById("live-updated");
   try {
-    const [count, severe] = await Promise.all([
-      getJson("/alerts/active/count"),
-      getJson("/alerts/active?status=actual&severity=Extreme,Severe"),
-    ]);
+    const response = await fetch("/api/landing/alerts", { headers: { Accept: "application/json" } });
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.error || `Alert feed request failed with HTTP ${response.status}.`);
+    }
+    const { count, severe } = result;
     const states = Object.keys(count.areas ?? {}).filter((code) => !MARINE_AREAS.has(code));
 
     document.getElementById("stat-total").textContent = count.land.toLocaleString();
@@ -101,7 +96,7 @@ async function loadLive() {
     document.getElementById("stat-states").textContent = states.length;
     renderAlerts(severe.features);
     renderTicker(severe.features);
-    updated.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+    updated.textContent = `Updated ${new Date(result.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
   } catch (error) {
     updated.textContent = "Feed unavailable";
     document.getElementById("live-list").innerHTML =

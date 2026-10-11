@@ -172,6 +172,7 @@ FEMA_SHELTER_URL = "https://gis.fema.gov/arcgis/rest/services/NSS/OpenShelters/F
 # 0.02 degrees is roughly 1.4 miles. Warning polygons can be small, so don't go much bigger.
 CELL_DEG = float(os.environ.get("CELL_DEG", "0.02"))
 ALERT_CACHE_SECONDS = 300     # one NWS call per grid cell per 5 minutes
+LANDING_ALERT_CACHE_SECONDS = 120
 SHELTER_CACHE_SECONDS = 600
 SHELTER_BUFFER_MILES = 5      # shelters are fetched around the cell center, so pad the radius
 LOCATION_TTL_HOURS = 24       # employee locations older than this are deleted
@@ -706,6 +707,8 @@ def geocode_location(address, location_id):
 
 weather_cache = {}
 weather_cache_lock = Lock()
+landing_alert_cache = None
+landing_alert_cache_lock = Lock()
 
 
 def summarize_alerts(raw):
@@ -1545,6 +1548,7 @@ ROUTES = [(m, re.compile(p), name, access) for m, p, name, access in [
     ("POST", r"/api/logout", "h_logout", "auth"),
     ("GET", r"/api/locations", "h_locations", "public"),
     ("GET", r"/api/weather", "h_weather", "public"),
+    ("GET", r"/api/landing/alerts", "h_landing_alerts", "public"),
     ("GET", r"/api/me", "h_me", "auth"),
     ("PUT", r"/api/me/notification-preferences", "h_notification_preferences_update", "auth"),
     ("GET", r"/api/employees", "h_employees_list", "manager"),
@@ -1996,6 +2000,31 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
         }
         with weather_cache_lock:
             weather_cache[location_id] = {"cachedAt": monotonic(), "value": result}
+        self.send_json(result)
+
+    def h_landing_alerts(self, employee, query):
+        global landing_alert_cache
+        with landing_alert_cache_lock:
+            cached = landing_alert_cache
+            if cached and monotonic() - cached["cachedAt"] < LANDING_ALERT_CACHE_SECONDS:
+                self.send_json(cached["value"])
+                return
+
+        try:
+            count = fetch_nws_json(f"{NWS_ALERTS_URL}/count")
+            severe = fetch_nws_json(
+                f"{NWS_ALERTS_URL}?{urlencode({'status': 'actual', 'severity': 'Extreme,Severe'})}"
+            )
+            if not isinstance(count.get("areas"), dict) or not isinstance(severe.get("features"), list):
+                raise ValueError("The National Weather Service returned invalid active-alert data.")
+        except (URLError, TimeoutError, json.JSONDecodeError, ValueError, OSError) as err:
+            self.send_json({"error": f"Unable to load the National Weather Service alert feed: {err}"},
+                           status=502)
+            return
+
+        result = {"count": count, "severe": severe, "updatedAt": now_iso()}
+        with landing_alert_cache_lock:
+            landing_alert_cache = {"cachedAt": monotonic(), "value": result}
         self.send_json(result)
 
     def h_location_get(self, employee, query, location_id):
