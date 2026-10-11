@@ -1689,6 +1689,23 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
                 "FROM employees e LEFT JOIN employee_flags f ON f.user_id = e.user_id WHERE e.user_id = ?",
                 (employee["user_id"],),
             ).fetchone()
+        if row is None and employee["user_id"] in MANAGER_IDS:
+            self.send_json({
+                "userId": employee["user_id"],
+                "name": "Fieldcast Administrator",
+                "locationId": None,
+                "shiftStart": None,
+                "shiftEnd": None,
+                "daysOfWeek": None,
+                "locationSharing": False,
+                "email": "",
+                "emailNotificationsEnabled": False,
+                "isManager": True,
+            })
+            return
+        if row is None:
+            self.send_json({"error": "Employee profile not found."}, status=404)
+            return
         self.send_json({"userId": row["user_id"], "name": row["full_name"],
                         "locationId": row["location_id"], "shiftStart": row["shift_start"],
                         "shiftEnd": row["shift_end"], "daysOfWeek": row["days_of_week"],

@@ -948,6 +948,7 @@ h3 { font-size: 1.15rem; font-weight: 500; letter-spacing: -0.01em; }
 /* ---------- responsive ---------- */
 @media (max-width: 1020px) {
   .nav-links { display: none; }
+  .burger { display: block; }
   .hero-grid, .rec-grid, .log-grid, .roles-grid { grid-template-columns: 1fr; }
   .posture-detail { grid-template-columns: 1fr; gap: 1.25rem; }
   .how .flow { grid-template-columns: repeat(2, 1fr); row-gap: 2.5rem; }
@@ -959,7 +960,6 @@ h3 { font-size: 1.15rem; font-weight: 500; letter-spacing: -0.01em; }
 @media (max-width: 767px) {
   .nav { gap: 0.6rem; }
   .nav > .btn-small { display: none; }
-  .burger { display: block; }
   .hero-scene { height: max(100dvh, 54rem); }
   .hero-back { padding-top: 7rem; }
   .hero-word { height: auto; }

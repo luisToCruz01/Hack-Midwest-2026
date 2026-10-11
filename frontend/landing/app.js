@@ -4,21 +4,40 @@ document.documentElement.classList.add("js");
 try {
   if (localStorage.getItem("fieldcastSessionToken")) {
     document.querySelectorAll("[data-dashboard-link]").forEach((link) => {
-      link.href = "/employee.html";
+      link.href = "/login.html";
       const label = link.querySelector("span") ?? link;
-      if (/log in|sign in|open dashboard/i.test(label.textContent)) label.textContent = "Open Fieldcast";
+      label.textContent = "Checking access…";
     });
     const token = localStorage.getItem("fieldcastSessionToken");
     fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } })
-      .then((response) => response.ok ? response.json() : null)
+      .then((response) => {
+        if (!response.ok) throw new Error(`Session check failed with HTTP ${response.status}.`);
+        return response.json();
+      })
       .then((profile) => {
         if (profile?.isManager) {
           document.querySelectorAll("[data-dashboard-link]").forEach((link) => {
             link.href = "/dashboard";
+            const label = link.querySelector("span") ?? link;
+            label.textContent = "Open admin dashboard";
+          });
+        } else if (profile) {
+          document.querySelectorAll("[data-dashboard-link]").forEach((link) => {
+            link.href = "/employee.html";
+            const label = link.querySelector("span") ?? link;
+            label.textContent = "Open employee portal";
           });
         }
       })
-      .catch((error) => console.error("Unable to check the signed-in role.", error));
+      .catch((error) => {
+        localStorage.removeItem("fieldcastSessionToken");
+        document.querySelectorAll("[data-dashboard-link]").forEach((link) => {
+          link.href = "/login.html";
+          const label = link.querySelector("span") ?? link;
+          label.textContent = "Employee & manager sign in";
+        });
+        console.warn("Unable to check the signed-in role; sign in again.", error);
+      });
   }
 } catch {
   // storage blocked: links keep pointing at the login page
