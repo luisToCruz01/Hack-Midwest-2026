@@ -219,47 +219,6 @@
         </div>
       </section>
 
-      <!-- POSTURES -->
-      <section class="section sky" id="postures">
-        <canvas class="sky-canvas" aria-hidden="true"></canvas>
-        <div class="sky-shade" aria-hidden="true"></div>
-        <div class="container">
-          <div class="section-head">
-            <p class="eyebrow reveal">Graded, not binary</p>
-            <h2 class="reveal">Five operating postures. <em>The same ones the federal workforce already uses.</em></h2>
-            <p class="section-lede reveal">Recommendations map to OPM-style operating status categories,
-              so the output speaks the language employees and supervisors already know.</p>
-          </div>
-
-          <div class="bezel reveal">
-            <div class="bezel-core postures">
-              <div class="posture-scale" role="tablist" aria-label="Operating postures">
-                <button role="tab" class="posture-tab" data-posture="normal" style="--c: var(--p-normal)">Normal operations</button>
-                <button role="tab" class="posture-tab" data-posture="delay" style="--c: var(--p-delay)">Delayed arrival</button>
-                <button role="tab" class="posture-tab" data-posture="early" style="--c: var(--p-early)">Early dismissal</button>
-                <button role="tab" class="posture-tab" data-posture="telework" style="--c: var(--p-telework)">Leave / telework</button>
-                <button role="tab" class="posture-tab" data-posture="closed" style="--c: var(--p-closed)">Closed</button>
-              </div>
-              <div class="posture-meter" aria-hidden="true"><span id="posture-fill"></span></div>
-              <div class="posture-detail" role="tabpanel" id="posture-detail">
-                <div>
-                  <p class="mono label">Typical trigger</p>
-                  <p id="pd-trigger"></p>
-                </div>
-                <div>
-                  <p class="mono label">Who hears about it</p>
-                  <p id="pd-who"></p>
-                </div>
-                <div>
-                  <p class="mono label">Notification urgency</p>
-                  <p id="pd-urgency"></p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <!-- RECOMMENDATION -->
       <section class="section" id="recommendation">
         <div class="container rec-grid">
@@ -320,6 +279,47 @@
                 <button class="btn btn-small btn-ghost copy-btn" type="button" data-copy="rationale-text">
                   <span>Copy for email</span>
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- POSTURES -->
+      <section class="section sky" id="postures">
+        <canvas class="sky-canvas" aria-hidden="true"></canvas>
+        <div class="sky-shade" aria-hidden="true"></div>
+        <div class="container">
+          <div class="section-head">
+            <p class="eyebrow reveal">Graded, not binary</p>
+            <h2 class="reveal">Five operating postures. <em>The same ones the federal workforce already uses.</em></h2>
+            <p class="section-lede reveal">Recommendations map to OPM-style operating status categories,
+              so the output speaks the language employees and supervisors already know.</p>
+          </div>
+
+          <div class="bezel reveal">
+            <div class="bezel-core postures">
+              <div class="posture-scale" role="tablist" aria-label="Operating postures">
+                <button role="tab" class="posture-tab" data-posture="normal" style="--c: var(--p-normal)">Normal operations</button>
+                <button role="tab" class="posture-tab" data-posture="delay" style="--c: var(--p-delay)">Delayed arrival</button>
+                <button role="tab" class="posture-tab" data-posture="early" style="--c: var(--p-early)">Early dismissal</button>
+                <button role="tab" class="posture-tab" data-posture="telework" style="--c: var(--p-telework)">Leave / telework</button>
+                <button role="tab" class="posture-tab" data-posture="closed" style="--c: var(--p-closed)">Closed</button>
+              </div>
+              <div class="posture-meter" aria-hidden="true"><span id="posture-fill"></span></div>
+              <div class="posture-detail" role="tabpanel" id="posture-detail">
+                <div>
+                  <p class="mono label">Typical trigger</p>
+                  <p id="pd-trigger"></p>
+                </div>
+                <div>
+                  <p class="mono label">Who hears about it</p>
+                  <p id="pd-who"></p>
+                </div>
+                <div>
+                  <p class="mono label">Notification urgency</p>
+                  <p id="pd-urgency"></p>
+                </div>
               </div>
             </div>
           </div>
@@ -493,7 +493,9 @@
 
       <!-- PRINCIPLE + CTA -->
       <section class="section cta">
-        <div class="glow glow-c" aria-hidden="true"></div>
+        <video class="cta-video" src="./assets/cta-fields.mp4" poster="./assets/cta-fields.webp"
+          autoplay muted loop playsinline preload="metadata" aria-hidden="true"></video>
+        <div class="cta-shade" aria-hidden="true"></div>
         <div class="container cta-inner">
           <p class="eyebrow reveal">Our principle</p>
           <h2 class="reveal cta-title">We don’t automate the decision.<br /><em>We make sure it’s a good one.</em></h2>

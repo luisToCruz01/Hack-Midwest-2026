@@ -862,6 +862,16 @@ h3 { font-size: 1.15rem; font-weight: 500; letter-spacing: -0.01em; }
 
 /* CTA */
 .cta { text-align: center; overflow: hidden; }
+.cta-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cta-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(var(--bg), transparent 15%, transparent 85%, var(--bg));
+}
+.cta-inner { text-shadow: 0 2px 18px rgb(0 0 0 / 55%), 0 1px 3px rgb(0 0 0 / 40%); }
+.cta-inner .btn { text-shadow: none; }
+.cta .eyebrow { color: #fff; text-shadow: none; background: rgb(2 8 4 / 45%); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.cta .section-lede { color: #fff; }
 .glow-c { width: 50rem; height: 30rem; left: 50%; top: 30%; transform: translateX(-50%); background: rgb(22 110 92 / 28%); }
 .cta-inner { position: relative; display: flex; flex-direction: column; align-items: center; }
 .cta .cta-title { max-width: 20ch; font-size: clamp(2.2rem, 5vw, 4.2rem); }
