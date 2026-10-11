@@ -100,12 +100,15 @@ def load_env_file():
     for path in (backend_directory / ".env", backend_directory.parent / ".env"):
         if not path.exists():
             continue
+        file_values = {}
         for line in path.read_text(encoding="utf-8-sig").splitlines():
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
                 continue
             key, value = line.split("=", 1)
-            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+            file_values[key.strip()] = value.strip().strip('"').strip("'")
+        for key, value in file_values.items():
+            os.environ.setdefault(key, value)
 
 
 load_env_file()  # must run before the settings below are read
