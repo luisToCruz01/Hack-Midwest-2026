@@ -20,7 +20,10 @@ The main server requires PostgreSQL. Set `DATABASE_URL` in the project-root
 `.env` file or in your shell environment before starting it; real environment
 variables take precedence over values in `.env`. When connecting to a Render
 database from your computer, use its External Database URL; Render's internal
-database URLs are only reachable from Render services.
+database URLs are only reachable from Render services. If PostgreSQL is
+unreachable, the server still serves the website and permits configured manager
+IDs to sign in, but database-backed dashboard actions and employee sign-in
+remain unavailable until the connection is restored.
 
 Open <http://127.0.0.1:3000> for the landing page (it redirects to `/landing/`).
 The admin dashboard is at <http://127.0.0.1:3000/dashboard>. Set the `PORT`

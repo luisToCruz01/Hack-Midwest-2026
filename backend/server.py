@@ -87,7 +87,7 @@ from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import psycopg
-from psycopg_pool import ConnectionPool
+from psycopg_pool import ConnectionPool, PoolTimeout
 
 
 # ======================================================================
@@ -362,6 +362,7 @@ class Db:
 
 _pool = None
 _pool_lock = Lock()
+DATABASE_READY = False
 
 
 def get_pool():
@@ -370,8 +371,8 @@ def get_pool():
         if _pool is None:
             if not DATABASE_URL:
                 raise SystemExit("DATABASE_URL is not set. Set it to your Postgres connection string.")
-            _pool = ConnectionPool(DATABASE_URL, min_size=1, max_size=DB_POOL_MAX, timeout=30,
-                                   kwargs={"row_factory": row_factory}, open=True)
+            _pool = ConnectionPool(DATABASE_URL, min_size=1, max_size=DB_POOL_MAX, timeout=5,
+                                    kwargs={"row_factory": row_factory, "connect_timeout": 5}, open=True)
         return _pool
 
 
@@ -1610,6 +1611,12 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
             if access == "manager" and employee["user_id"] not in MANAGER_IDS:
                 self.send_json({"error": "Manager access required."}, status=403)
                 return
+            if access != "public" and not DATABASE_READY:
+                self.send_json(
+                    {"error": "The database is unavailable. The page loaded, but this action needs a database connection."},
+                    status=503,
+                )
+                return
             getattr(self, name)(employee, query, *match.groups())
             return
 
@@ -1640,7 +1647,8 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
 
     # ----- basic -----
     def h_health(self, employee, query):
-        self.send_json({"status": "ok", "storage": "postgres", "time": now_iso(),
+        self.send_json({"status": "ok" if DATABASE_READY else "degraded",
+                        "storage": "postgres", "databaseReady": DATABASE_READY, "time": now_iso(),
                         "autoScanMinutes": AUTO_SCAN_MINUTES, "autoDecide": AUTO_DECIDE,
                         "allClear": ALL_CLEAR,
                         "delivery": "webhook" if NOTIFY_WEBHOOK_URL else "simulated"})
@@ -1659,9 +1667,17 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
             self.send_json({"error": "Enter a valid six-digit ID."}, status=400)
             return
         is_manager = user_id in MANAGER_IDS
-        with get_db() as conn:
-            row = conn.execute("SELECT user_id, full_name FROM employees WHERE user_id = ?",
-                               (user_id,)).fetchone()
+        if not DATABASE_READY and not is_manager:
+            self.send_json(
+                {"error": "The database is unavailable. Employee sign-in needs a database connection."},
+                status=503,
+            )
+            return
+        row = None
+        if DATABASE_READY:
+            with get_db() as conn:
+                row = conn.execute("SELECT user_id, full_name FROM employees WHERE user_id = ?",
+                                   (user_id,)).fetchone()
         if row is None and not is_manager:  # NOTE: ID-only login is a demo stub. Replace with real authentication.
             self.send_json({"error": "Unknown employee."}, status=401)
             return
@@ -2399,12 +2415,20 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
 
 
 def main():
-    init_db()
-    if AUTO_SCAN_MINUTES > 0:
+    global DATABASE_READY, _pool
+    try:
+        init_db()
+        DATABASE_READY = True
+    except PoolTimeout:
+        if _pool is not None:
+            _pool.close()
+            _pool = None
+        print("WARNING: PostgreSQL is unavailable; serving pages in read-only offline mode.")
+    if DATABASE_READY and AUTO_SCAN_MINUTES > 0:
         Thread(target=scan_loop, daemon=True).start()
     server = ThreadingHTTPServer((HOST, PORT), ClosureCallHandler)
     print(f"Closure Call server running at http://{HOST}:{PORT}")
-    print("Database: PostgreSQL (DATABASE_URL)")
+    print(f"Database: {'PostgreSQL' if DATABASE_READY else 'unavailable (offline mode)'}")
     print(f"Facility auto-scan: {'every %d min' % AUTO_SCAN_MINUTES if AUTO_SCAN_MINUTES else 'off'}")
     print(f"Auto-send without manager approval: {'ON (min confidence ' + AUTO_DECIDE_MIN_CONFIDENCE + ')' if AUTO_DECIDE else 'off'}")
     print(f"All-clear messages: {'ON (hold ' + str(ALL_CLEAR_HOLD_MINUTES) + ' min)' if ALL_CLEAR else 'off'}")
