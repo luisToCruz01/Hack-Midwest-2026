@@ -1,0 +1,31 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Start Fieldcast backend",
+            "type": "process",
+            "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+            "args": [
+                "-u",
+                "${workspaceFolder}\\backend\\server.py"
+            ],
+            "options": {
+                "env": {
+                    "PORT": "3001"
+                }
+            },
+            "isBackground": true,
+            "problemMatcher": {
+                "owner": "fieldcast-server",
+                "pattern": {
+                    "regexp": "^$"
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "^",
+                    "endsPattern": "Closure Call server running at http://.*"
+                }
+            }
+        }
+    ]
+}

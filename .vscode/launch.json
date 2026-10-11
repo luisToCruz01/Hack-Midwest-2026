@@ -7,8 +7,9 @@
         {
             "type": "chrome",
             "request": "launch",
-            "name": "Launch Chrome against localhost",
-            "url": "http://127.0.0.1:3000/login.html",
+            "name": "Launch Fieldcast website",
+            "url": "http://127.0.0.1:3001/login.html",
+            "preLaunchTask": "Start Fieldcast backend",
             "webRoot": "${workspaceFolder}"
         }
     ]
