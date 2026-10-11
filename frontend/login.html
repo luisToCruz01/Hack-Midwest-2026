@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Log in to Fieldcast with your user ID." />
-    <title>Log in | Fieldcast</title>
+    <meta name="description" content="Sign in to Fieldcast as an employee or manager." />
+    <title>Sign in | Fieldcast</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -14,16 +14,16 @@
           <span class="brand-mark" aria-hidden="true">W</span>
           <span>Fieldcast</span>
         </a>
-        <a class="login-button" href="./index.html">Back to dashboard</a>
+        <a class="login-button" href="/landing/">Back to home</a>
       </header>
 
       <main class="login-content">
         <section class="content-card login-card" aria-labelledby="login-title">
-          <p class="eyebrow">ACCOUNT ACCESS</p>
-          <h1 id="login-title">Welcome back</h1>
-          <p class="page-description">Enter your user ID to continue.</p>
+          <p class="eyebrow">EMPLOYEE &amp; MANAGER ACCESS</p>
+          <h1 id="login-title">Sign in to Fieldcast</h1>
+          <p class="page-description">Enter your six-digit employee ID to open your employee portal or manager dashboard.</p>
           <form class="login-form" id="login-form">
-            <label for="user-id">User ID</label>
+            <label for="user-id">Six-digit ID</label>
             <input
               id="user-id"
               name="userId"
@@ -32,7 +32,7 @@
               inputmode="numeric"
               pattern="[0-9]{6}"
               maxlength="6"
-              placeholder="Enter your user ID"
+              placeholder="Employee or admin ID"
               required
             />
             <p class="form-feedback" id="login-feedback" role="status" aria-live="polite"></p>

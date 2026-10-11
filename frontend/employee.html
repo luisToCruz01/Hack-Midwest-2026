@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Employee schedule, weather alerts, and optional location sharing on Fieldcast." />
+    <title>Employee portal | Fieldcast</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./employee.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/landing/" aria-label="Fieldcast home">
+          <span class="brand-mark" aria-hidden="true">W</span>
+          <span>Fieldcast</span>
+          <span class="brand-divider" aria-hidden="true"></span>
+          <span class="brand-section">Employee</span>
+        </a>
+        <a class="login-button" id="employee-sign-out" href="/landing/">Sign out</a>
+      </header>
+
+      <main class="main-content employee-main">
+        <section class="page-heading">
+          <div>
+            <p class="eyebrow">FIELDCAST <span class="eyebrow-dot"></span> EMPLOYEE PORTAL</p>
+            <h1 id="employee-name">Loading your profile…</h1>
+            <p class="page-description">Your schedule, work site, and personal weather alerts.</p>
+          </div>
+        </section>
+
+        <div class="content-grid employee-portal-grid">
+          <section class="content-card" aria-labelledby="employee-schedule-title">
+            <div class="card-heading">
+              <div>
+                <p class="eyebrow">YOUR WORK</p>
+                <h2 id="employee-schedule-title">Schedule and site</h2>
+              </div>
+            </div>
+            <dl class="employee-profile-details">
+              <div><dt>Employee ID</dt><dd id="employee-user-id">Loading…</dd></div>
+              <div><dt>Work site</dt><dd id="employee-work-site">Loading…</dd></div>
+              <div><dt>Work days</dt><dd id="employee-work-days">Loading…</dd></div>
+              <div><dt>Shift</dt><dd id="employee-shift">Loading…</dd></div>
+            </dl>
+          </section>
+
+          <section class="content-card employee-sharing-card" aria-labelledby="employee-sharing-title">
+            <div class="card-heading">
+              <div>
+                <p class="eyebrow">OPTIONAL LOCATION SHARING</p>
+                <h2 id="employee-sharing-title">Personal weather monitoring</h2>
+              </div>
+            </div>
+            <p class="page-description">When enabled, Fieldcast checks for severe weather near your current location. Sharing is optional and visible to authorized managers. Browser sharing works while this page is open.</p>
+            <p class="weather-map-status" id="employee-location-status" role="status" aria-live="polite">Location sharing is off.</p>
+            <p class="employee-current-location" id="employee-current-location" hidden></p>
+            <div class="form-actions employee-sharing-actions">
+              <button class="secondary-button" id="employee-location-button" type="button">Enable location sharing</button>
+            </div>
+          </section>
+        </div>
+
+        <section class="content-card employee-email-card" aria-labelledby="employee-email-title">
+          <div class="card-heading">
+            <div>
+              <p class="eyebrow">NOTIFICATION PREFERENCES</p>
+              <h2 id="employee-email-title">Email notifications</h2>
+            </div>
+          </div>
+          <p class="page-description">Add an email address and opt in to receive work-site and personal weather notifications by email. Email delivery depends on your organization configuring an email provider.</p>
+          <form class="employee-email-form" id="employee-email-form">
+            <label class="field" for="employee-email">Email address
+              <input id="employee-email" name="email" type="email" maxlength="254" autocomplete="email" placeholder="you@example.com" />
+            </label>
+            <label class="employee-email-opt-in" for="employee-email-enabled">
+              <input id="employee-email-enabled" name="emailNotificationsEnabled" type="checkbox" />
+              <span>Enable email notifications</span>
+            </label>
+            <p class="weather-map-status" id="employee-email-status" role="status" aria-live="polite"></p>
+            <div class="form-actions employee-email-actions">
+              <button class="primary-button" id="employee-email-save" type="submit">Save email preferences</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="content-card employee-alerts-card" aria-labelledby="employee-alerts-title">
+          <div class="card-heading">
+            <div>
+              <p class="eyebrow">PERSONAL WEATHER</p>
+              <h2 id="employee-alerts-title">Your recent alerts</h2>
+            </div>
+            <button class="text-button" id="employee-refresh-alerts" type="button">Refresh</button>
+          </div>
+          <p class="weather-map-status" id="employee-alert-status" role="status" aria-live="polite"></p>
+          <div class="employee-alert-list" id="employee-alert-list"></div>
+          <p class="table-empty" id="employee-alert-empty" hidden>No personal alerts yet. Turn on location sharing to check for severe weather near you.</p>
+        </section>
+      </main>
+      <footer class="app-footer"><span class="footer-dot"></span> FIELDCAST EMPLOYEE PORTAL</footer>
+    </div>
+  </body>
+</html>

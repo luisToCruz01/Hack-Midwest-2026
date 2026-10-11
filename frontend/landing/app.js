@@ -4,10 +4,21 @@ document.documentElement.classList.add("js");
 try {
   if (localStorage.getItem("fieldcastSessionToken")) {
     document.querySelectorAll("[data-dashboard-link]").forEach((link) => {
-      link.href = "/dashboard";
+      link.href = "/employee.html";
       const label = link.querySelector("span") ?? link;
-      if (/log in/i.test(label.textContent)) label.textContent = label.textContent.replace(/log in/i, "Dashboard");
+      if (/log in|sign in|open dashboard/i.test(label.textContent)) label.textContent = "Open Fieldcast";
     });
+    const token = localStorage.getItem("fieldcastSessionToken");
+    fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } })
+      .then((response) => response.ok ? response.json() : null)
+      .then((profile) => {
+        if (profile?.isManager) {
+          document.querySelectorAll("[data-dashboard-link]").forEach((link) => {
+            link.href = "/dashboard";
+          });
+        }
+      })
+      .catch((error) => console.error("Unable to check the signed-in role.", error));
   }
 } catch {
   // storage blocked: links keep pointing at the login page

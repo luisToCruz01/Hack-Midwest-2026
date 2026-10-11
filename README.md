@@ -36,6 +36,17 @@ main backend to check for personal NWS alerts. See [mobile/README.md](mobile/REA
 for setup. ID-only sign-in and local notifications are prototype behavior;
 production authentication and remote push delivery are not configured.
 
+Employees can also sign in from the website at `/login.html`. Employee accounts
+open the web employee portal at `/employee.html`, where they can see their work
+schedule and personal alerts. Optional browser location sharing requires explicit
+permission and only sends updates while the portal remains open; background
+sharing requires the native mobile app. Manager IDs listed in `MANAGER_IDS`
+open the admin dashboard, even when they are not part of the employee roster.
+Other valid employee IDs open the employee portal. Employees can save an email
+address and opt in to work-site and personal email notifications from their
+portal. Real email delivery requires the organization's notification webhook to
+be configured with an email provider.
+
 The Employees page reads the employee roster from SQLite through
 `GET /api/employees`. Employee details shown there come from the database;
 working/off-shift status is calculated from each employee's workdays and shift
@@ -48,6 +59,13 @@ Managers can edit an employee's name, phone, work site, and schedule from the
 Employees page. Changes are saved through `PUT /api/admin/employees/<userId>`.
 Sign in with a manager ID configured in `MANAGER_IDS`; employee IDs are fixed,
 and working status is recalculated from the saved schedule.
+
+Managers can view recent live locations shared by employees on the Live locations
+page. The manager-only `GET /api/admin/employee-locations` endpoint returns only
+employees who opted in through the mobile app; turning sharing off deletes that
+employee's stored location, and locations without a device update in the last five
+minutes are excluded from the live view. Stored employee locations are deleted
+after 24 hours.
 
 The overview work-site selector lists locations from the main database. The
 map geocodes a selected location's address with the U.S. Census Geocoder, then

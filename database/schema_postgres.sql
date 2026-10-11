@@ -379,12 +379,12 @@ INSERT INTO employees (
 )
 SELECT
   lpad((99999 + person_number)::text, 6, '0'),
-  2 + ((person_number - 1) / 30),
+  (2 + ((person_number - 1) / 30))::integer,
   full_name,
-  '202-555-' || lpad((100 + ((person_number - 1) % 100))::text, 4, '0')
-    || ' ext. ' || lpad((30 + person_number)::text, 4, '0'),
+  '202-555-' || lpad((100 + ((person_number - 1) % 100))::text, 4, '0') ||
+    ' ext. ' || lpad((30 + person_number)::text, 4, '0'),
   to_char(shifts.start_time::time, 'HH24:MI'),
-  to_char(shifts.start_time::time + interval '8 hours 30 minutes', 'HH24:MI'),
+  to_char((shifts.start_time::time + interval '8 hours 30 minutes')::time, 'HH24:MI'),
   workdays.days
 FROM numbered_names
 JOIN shifts ON shifts.shift_number = person_number % 17

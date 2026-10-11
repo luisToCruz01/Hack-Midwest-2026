@@ -175,6 +175,7 @@ ALERT_CACHE_SECONDS = 300     # one NWS call per grid cell per 5 minutes
 SHELTER_CACHE_SECONDS = 600
 SHELTER_BUFFER_MILES = 5      # shelters are fetched around the cell center, so pad the radius
 LOCATION_TTL_HOURS = 24       # employee locations older than this are deleted
+LIVE_LOCATION_MAX_AGE_MINUTES = 5
 MIN_LOCATION_INTERVAL_SECONDS = int(os.environ.get("MIN_LOCATION_INTERVAL_SECONDS", "10"))
 # Minimum gap between calls to /api/alerts and /api/shelters per logged-in user.
 API_MIN_INTERVAL_SECONDS = int(os.environ.get("API_MIN_INTERVAL_SECONDS", "5"))
@@ -218,8 +219,10 @@ CREATE TABLE IF NOT EXISTS employee_flags (
     telework_eligible INTEGER NOT NULL DEFAULT 1,
     email TEXT,
     phone TEXT,
-    location_consent INTEGER NOT NULL DEFAULT 0
+    location_consent INTEGER NOT NULL DEFAULT 0,
+    email_notifications_enabled INTEGER NOT NULL DEFAULT 0
 );
+ALTER TABLE employee_flags ADD COLUMN IF NOT EXISTS email_notifications_enabled INTEGER NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS employee_location (
     user_id TEXT PRIMARY KEY REFERENCES employees(user_id),
     lat DOUBLE PRECISION NOT NULL,
@@ -1053,10 +1056,10 @@ def pick_channels(emp, urgency):
         if emp["phone"]:
             channels.append("sms")
     else:
-        if emp["email"]:
-            channels.append("email")
         if emp["location_consent"]:
             channels.append("push")
+    if emp["email"] and emp["email_notifications_enabled"]:
+        channels.append("email")
     return channels or ["none_on_file"]
 
 
@@ -1095,7 +1098,8 @@ def build_package(loc, posture, now_local, headline):
             """SELECT e.user_id, e.full_name, e.shift_start, e.shift_end, e.days_of_week,
                       COALESCE(f.is_essential, 0) AS is_essential,
                       COALESCE(f.telework_eligible, 1) AS telework_eligible,
-                      f.email, f.phone, COALESCE(f.location_consent, 0) AS location_consent
+                      f.email, f.phone, COALESCE(f.location_consent, 0) AS location_consent,
+                      COALESCE(f.email_notifications_enabled, 0) AS email_notifications_enabled
                FROM employees e LEFT JOIN employee_flags f ON f.user_id = e.user_id
                WHERE e.location_id = ? ORDER BY e.user_id""",
             (loc["location_id"],),
@@ -1233,6 +1237,10 @@ def process_location(user_id, lat, lon):
     now = datetime.now(timezone.utc)
     with get_db() as conn:
         prev = conn.execute("SELECT updated_at FROM employee_location WHERE user_id = ?", (user_id,)).fetchone()
+        flags = conn.execute(
+            "SELECT email, email_notifications_enabled FROM employee_flags WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
     if prev:
         try:
             age = (now - datetime.fromisoformat(prev["updated_at"])).total_seconds()
@@ -1252,14 +1260,17 @@ def process_location(user_id, lat, lon):
     result = get_cell_alerts(key, clat, clon)
     urgent = [a for a in result["alerts"] if alert_matches(PERSONAL_ALERT_RULE, a) and a.get("id")]
     new_notifications = []
+    notification_channels = "push,email" if (
+        flags and flags["email"] and flags["email_notifications_enabled"]
+    ) else "push"
 
     for alert in urgent:
         # Step 1: the immediate alert, once per person per NWS alert.
         message = compose_personal_message(alert)
         with get_db() as conn:
-            notif_id = queue_notification(conn, "personal", user_id, "push", message, alert_id=alert["id"])
+            notif_id = queue_notification(conn, "personal", user_id, notification_channels, message, alert_id=alert["id"])
         if notif_id:
-            status = deliver(notif_id, "personal", user_id, "push", message)
+            status = deliver(notif_id, "personal", user_id, notification_channels, message)
             append_log("personal_alert", {"userId": user_id, "alertId": alert["id"],  # no coordinates
                                           "event": alert.get("event"), "severity": alert.get("severity"),
                                           "snapshotId": result["snapshotId"]})
@@ -1280,10 +1291,10 @@ def process_location(user_id, lat, lon):
             continue
         shelter_message = compose_shelter_message(alert, shelter_result["shelters"])
         with get_db() as conn:
-            shelter_notif_id = queue_notification(conn, "shelter", user_id, "push", shelter_message,
+            shelter_notif_id = queue_notification(conn, "shelter", user_id, notification_channels, shelter_message,
                                                   alert_id=followup_key)
         if shelter_notif_id:
-            status = deliver(shelter_notif_id, "shelter", user_id, "push", shelter_message)
+            status = deliver(shelter_notif_id, "shelter", user_id, notification_channels, shelter_message)
             append_log("shelter_followup", {"userId": user_id, "alertId": alert["id"],
                                             "shelterCount": len(shelter_result["shelters"])})
             new_notifications.append({"alertId": followup_key, "kind": "shelter", "event": alert.get("event"),
@@ -1531,10 +1542,13 @@ def scan_loop():
 ROUTES = [(m, re.compile(p), name, access) for m, p, name, access in [
     ("GET", r"/api/health", "h_health", "public"),
     ("POST", r"/api/login", "h_login", "public"),
+    ("POST", r"/api/logout", "h_logout", "auth"),
     ("GET", r"/api/locations", "h_locations", "public"),
     ("GET", r"/api/weather", "h_weather", "public"),
     ("GET", r"/api/me", "h_me", "auth"),
+    ("PUT", r"/api/me/notification-preferences", "h_notification_preferences_update", "auth"),
     ("GET", r"/api/employees", "h_employees_list", "manager"),
+    ("GET", r"/api/admin/employee-locations", "h_employee_locations", "manager"),
     ("PUT", r"/api/admin/employees/([0-9]{6})", "h_employee_update", "manager"),
     ("GET", r"/api/locations", "h_locations", "manager"),
     ("GET", r"/api/locations/(\d+)", "h_location_get", "auth"),
@@ -1602,6 +1616,18 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
                 self.send_header("Location", "/landing/")
                 self.end_headers()
                 return
+            if route in ("/dashboard", "/index.html"):
+                employee = self.current_employee()
+                if employee is None:
+                    self.send_response(302)
+                    self.send_header("Location", "/login.html")
+                    self.end_headers()
+                    return
+                if employee["user_id"] not in MANAGER_IDS:
+                    self.send_response(302)
+                    self.send_header("Location", "/employee.html")
+                    self.end_headers()
+                    return
             if route == "/dashboard":
                 self.path = "/index.html"
             super().do_GET()
@@ -1625,23 +1651,37 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
         if payload is None:
             return
         user_id = payload.get("userId")
+        if not isinstance(user_id, str) or not re.fullmatch(r"[0-9]{6}", user_id):
+            self.send_json({"error": "Enter a valid six-digit ID."}, status=400)
+            return
+        is_manager = user_id in MANAGER_IDS
         with get_db() as conn:
             row = conn.execute("SELECT user_id, full_name FROM employees WHERE user_id = ?",
-                               (user_id if isinstance(user_id, str) else "",)).fetchone()
-        if row is None:  # NOTE: ID-only login is a demo stub. Replace with real authentication.
+                               (user_id,)).fetchone()
+        if row is None and not is_manager:  # NOTE: ID-only login is a demo stub. Replace with real authentication.
             self.send_json({"error": "Unknown employee."}, status=401)
             return
         token = secrets.token_urlsafe(24)
         with sessions_lock:
-            sessions[token] = (row["user_id"], monotonic() + SESSION_HOURS * 3600)
-        self.send_json({"token": token, "userId": row["user_id"], "name": row["full_name"],
-                        "isManager": row["user_id"] in MANAGER_IDS})
+            sessions[token] = (user_id, monotonic() + SESSION_HOURS * 3600)
+        self.send_json({"token": token, "userId": user_id,
+                        "name": row["full_name"] if row else "Fieldcast Administrator",
+                        "isManager": is_manager},
+                       headers={"Set-Cookie": self.session_cookie(token)})
+
+    def h_logout(self, employee, query):
+        token = self.session_token()
+        if token:
+            with sessions_lock:
+                sessions.pop(token, None)
+        self.send_json({"ok": True}, headers={"Set-Cookie": self.session_cookie("", clear=True)})
 
     def h_me(self, employee, query):
         with get_db() as conn:
             row = conn.execute(
                 "SELECT e.user_id, e.full_name, e.location_id, e.shift_start, e.shift_end, e.days_of_week, "
-                "COALESCE(f.location_consent, 0) AS consent "
+                "COALESCE(f.location_consent, 0) AS consent, f.email, "
+                "COALESCE(f.email_notifications_enabled, 0) AS email_notifications_enabled "
                 "FROM employees e LEFT JOIN employee_flags f ON f.user_id = e.user_id WHERE e.user_id = ?",
                 (employee["user_id"],),
             ).fetchone()
@@ -1649,7 +1689,37 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
                         "locationId": row["location_id"], "shiftStart": row["shift_start"],
                         "shiftEnd": row["shift_end"], "daysOfWeek": row["days_of_week"],
                         "locationSharing": bool(row["consent"]),
+                        "email": row["email"] or "",
+                        "emailNotificationsEnabled": bool(row["email_notifications_enabled"]),
                         "isManager": row["user_id"] in MANAGER_IDS})
+
+    def h_notification_preferences_update(self, employee, query):
+        payload = self.read_json_object()
+        if payload is None:
+            return
+        email = payload.get("email")
+        enabled = payload.get("emailNotificationsEnabled")
+        if not isinstance(email, str) or len(email.strip()) > 254:
+            self.send_json({"error": "Enter a valid email address."}, status=400)
+            return
+        email = email.strip()
+        if not isinstance(enabled, bool):
+            self.send_json({"error": "emailNotificationsEnabled must be true or false."}, status=400)
+            return
+        if enabled and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            self.send_json({"error": "Enter a valid email address to enable email notifications."}, status=400)
+            return
+        if email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            self.send_json({"error": "Enter a valid email address."}, status=400)
+            return
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO employee_flags (user_id, email, email_notifications_enabled) VALUES (?, ?, ?) "
+                "ON CONFLICT(user_id) DO UPDATE SET email = excluded.email, "
+                "email_notifications_enabled = excluded.email_notifications_enabled",
+                (employee["user_id"], email or None, int(enabled)),
+            )
+        self.send_json({"email": email, "emailNotificationsEnabled": enabled})
 
     # ----- roster (dashboard) -----
     def h_employees_list(self, employee, query):
@@ -1668,6 +1738,26 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
             "locationName": r["location_name"], "locationAddress": r["location_address"],
             "locationTimezone": r["tz"],
         } for r in rows])
+
+    def h_employee_locations(self, employee, query):
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=LIVE_LOCATION_MAX_AGE_MINUTES)).isoformat()
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT e.user_id, e.full_name, l.lat, l.lon, l.updated_at "
+                "FROM employee_location l "
+                "JOIN employees e ON e.user_id = l.user_id "
+                "JOIN employee_flags f ON f.user_id = l.user_id "
+                "WHERE f.location_consent = 1 AND l.updated_at >= ? "
+                "ORDER BY lower(e.full_name), e.user_id",
+                (cutoff,),
+            ).fetchall()
+        self.send_json([{
+            "userId": row["user_id"],
+            "fullName": row["full_name"],
+            "latitude": row["lat"],
+            "longitude": row["lon"],
+            "updatedAt": row["updated_at"],
+        } for row in rows])
 
     def h_employee_update(self, employee, query, user_id):
         payload = self.read_json_object()
@@ -2195,11 +2285,31 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
                         "description": description.strip(), "createdAt": created_at}, status=201)
 
     # ----- shared helpers -----
-    def current_employee(self):
+    def session_cookie(self, token, clear=False):
+        secure = self.headers.get("X-Forwarded-Proto", "").split(",")[0].strip().lower() == "https"
+        cookie = f"fieldcastSession={token}; Path=/; HttpOnly; SameSite=Lax"
+        if clear:
+            cookie += "; Max-Age=0"
+        else:
+            cookie += f"; Max-Age={SESSION_HOURS * 3600}"
+        if secure:
+            cookie += "; Secure"
+        return cookie
+
+    def session_token(self):
         header = self.headers.get("Authorization", "")
-        if not header.startswith("Bearer "):
+        if header.startswith("Bearer "):
+            return header[len("Bearer "):]
+        for cookie in self.headers.get("Cookie", "").split(";"):
+            name, separator, value = cookie.strip().partition("=")
+            if separator and name == "fieldcastSession":
+                return value
+        return ""
+
+    def current_employee(self):
+        token = self.session_token()
+        if not token:
             return None
-        token = header[len("Bearer "):]
         with sessions_lock:
             entry = sessions.get(token)
             if entry and entry[1] < monotonic():
@@ -2230,12 +2340,14 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
             return None
         return payload
 
-    def send_json(self, payload, status=200):
+    def send_json(self, payload, status=200, headers=None):
         response = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(response)))
         self.send_header("Cache-Control", "no-store")
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(response)
 
