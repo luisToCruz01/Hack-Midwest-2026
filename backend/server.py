@@ -1650,17 +1650,22 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
         if payload is None:
             return
         user_id = payload.get("userId")
+        if not isinstance(user_id, str) or not re.fullmatch(r"[0-9]{6}", user_id):
+            self.send_json({"error": "Enter a valid six-digit ID."}, status=400)
+            return
+        is_manager = user_id in MANAGER_IDS
         with get_db() as conn:
             row = conn.execute("SELECT user_id, full_name FROM employees WHERE user_id = ?",
-                               (user_id if isinstance(user_id, str) else "",)).fetchone()
-        if row is None:  # NOTE: ID-only login is a demo stub. Replace with real authentication.
+                               (user_id,)).fetchone()
+        if row is None and not is_manager:  # NOTE: ID-only login is a demo stub. Replace with real authentication.
             self.send_json({"error": "Unknown employee."}, status=401)
             return
         token = secrets.token_urlsafe(24)
         with sessions_lock:
-            sessions[token] = (row["user_id"], monotonic() + SESSION_HOURS * 3600)
-        self.send_json({"token": token, "userId": row["user_id"], "name": row["full_name"],
-                        "isManager": row["user_id"] in MANAGER_IDS})
+            sessions[token] = (user_id, monotonic() + SESSION_HOURS * 3600)
+        self.send_json({"token": token, "userId": user_id,
+                        "name": row["full_name"] if row else "Fieldcast Administrator",
+                        "isManager": is_manager})
 
     def h_me(self, employee, query):
         with get_db() as conn:

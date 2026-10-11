@@ -40,10 +40,12 @@ Employees can also sign in from the website at `/login.html`. Employee accounts
 open the web employee portal at `/employee.html`, where they can see their work
 schedule and personal alerts. Optional browser location sharing requires explicit
 permission and only sends updates while the portal remains open; background
-sharing requires the native mobile app. Manager accounts continue to open the
-admin dashboard. Employees can save an email address and opt in to work-site and
-personal email notifications from their portal. Real email delivery requires the
-organization's notification webhook to be configured with an email provider.
+sharing requires the native mobile app. Manager IDs listed in `MANAGER_IDS`
+open the admin dashboard, even when they are not part of the employee roster.
+Other valid employee IDs open the employee portal. Employees can save an email
+address and opt in to work-site and personal email notifications from their
+portal. Real email delivery requires the organization's notification webhook to
+be configured with an email provider.
 
 The Employees page reads the employee roster from SQLite through
 `GET /api/employees`. Employee details shown there come from the database;
