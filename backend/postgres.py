@@ -66,7 +66,7 @@ geocode_path = target.with_name("locations_to_geocode.csv")
 skipped = []
 with geocode_path.open("w", newline="", encoding="utf-8") as f:
     writer = csv.writer(f)
-    for location_id, _name, address in locations:
+    for location_id, _, address in locations:
         parts = [p.strip() for p in address.split(",")]
         if len(parts) < 3 or len(parts[-1].split()) != 2:
             skipped.append(location_id)
