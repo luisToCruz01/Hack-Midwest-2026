@@ -35,6 +35,7 @@
         <nav class="page-nav" aria-label="Admin navigation">
           <button class="nav-button" type="button" data-page="overview" aria-current="page">Overview</button>
           <button class="nav-button" type="button" data-page="employees">Employees</button>
+          <button class="nav-button" type="button" data-page="live-locations">Live locations</button>
           <button class="nav-button" type="button" data-page="alerts">
             Alerts <span class="nav-count" id="nav-alert-count">0</span>
           </button>
@@ -67,8 +68,8 @@
             </article>
             <article class="metric-card">
               <div class="card-label"><span class="card-icon icon-blue" aria-hidden="true">☼</span> Weather feed</div>
-              <p class="metric-value metric-value-small">Not connected</p>
-              <p class="metric-note">Weather provider setup required</p>
+              <p class="metric-value metric-value-small" id="weather-feed-status" role="status" aria-live="polite">Checking…</p>
+              <p class="metric-note" id="weather-feed-note">Loading National Weather Service conditions.</p>
             </article>
           </div>
 
@@ -130,6 +131,7 @@
               <h1 id="employees-title">Employees</h1>
               <p class="page-description">Browse the employee roster, schedules, and current shift status.</p>
             </div>
+            <button class="primary-button" id="add-employee-button" type="button" disabled>＋ Add employee</button>
           </div>
           <section class="content-card table-card" aria-label="Employee directory">
             <div class="table-toolbar">
@@ -164,6 +166,40 @@
               </table>
             </div>
             <p class="table-empty" id="employee-empty" aria-live="polite" hidden></p>
+            <nav class="table-pagination" id="employee-pagination" aria-label="Employee pages" hidden>
+              <button class="small-action" id="employee-previous-page" type="button">Previous</button>
+              <p id="employee-page-status" aria-live="polite"></p>
+              <button class="small-action" id="employee-next-page" type="button">Next</button>
+            </nav>
+          </section>
+        </section>
+
+        <section class="page-view" data-view="live-locations" aria-labelledby="live-locations-title" hidden>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">ADMIN CONSOLE <span class="eyebrow-dot"></span> LOCATION SHARING</p>
+              <h1 id="live-locations-title">Live locations</h1>
+              <p class="page-description">Current locations reported by employees who have enabled sharing in the Fieldcast mobile app.</p>
+            </div>
+            <button class="secondary-button" id="refresh-live-locations" type="button">Refresh locations</button>
+          </div>
+          <section class="content-card live-locations-card" aria-label="Employee live locations">
+            <p class="live-locations-privacy">
+              Only employees who turn on location sharing in the mobile app appear here. Locations stop appearing if the device has not reported an update in five minutes; turning sharing off deletes the saved location.
+            </p>
+            <p class="weather-map-status" id="live-locations-status" role="status" aria-live="polite">Loading shared locations…</p>
+            <div class="overview-map-frame live-locations-map-frame">
+              <div id="employee-locations-map" role="region" aria-label="Map of locations shared by employees"></div>
+            </div>
+            <div class="table-scroll live-locations-table-scroll">
+              <table>
+                <thead>
+                  <tr><th scope="col">Employee</th><th scope="col">Coordinates</th><th scope="col">Last update</th></tr>
+                </thead>
+                <tbody id="live-location-rows"></tbody>
+              </table>
+            </div>
+            <p class="table-empty" id="live-locations-empty" aria-live="polite" hidden></p>
           </section>
         </section>
 
@@ -271,6 +307,42 @@
             <p class="form-feedback" id="employee-edit-feedback" role="status" aria-live="polite"></p>
             <button class="secondary-button" type="button" data-close-dialog>Cancel</button>
             <button class="primary-button" type="submit">Save changes</button>
+          </div>
+        </form>
+      </dialog>
+
+      <dialog class="modal employee-edit-modal" id="employee-add-dialog" aria-labelledby="employee-add-title">
+        <form class="modal-form" id="employee-add-form">
+          <div class="card-heading">
+            <div>
+              <p class="eyebrow">EMPLOYEE DIRECTORY</p>
+              <h2 id="employee-add-title">Add employee</h2>
+            </div>
+            <button class="icon-button" type="button" data-close-dialog aria-label="Close dialog">×</button>
+          </div>
+          <div class="form-grid">
+            <label class="field">Employee ID<input name="userId" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required /></label>
+            <label class="field">Full name<input name="fullName" maxlength="120" autocomplete="name" required /></label>
+            <label class="field field-wide">Phone number<input name="phone" type="tel" maxlength="20" autocomplete="tel" /></label>
+            <label class="field field-wide">Work site<select name="locationId" required></select></label>
+            <label class="field">Shift starts<input name="shiftStart" type="time" value="08:00" required /></label>
+            <label class="field">Shift ends<input name="shiftEnd" type="time" value="17:00" required /></label>
+            <label class="field field-wide">Work days
+              <select name="daysOfWeek" required>
+                <option value="Mon-Fri">Monday–Friday</option>
+                <option value="Mon-Thu">Monday–Thursday</option>
+                <option value="Tue-Sat">Tuesday–Saturday</option>
+                <option value="Wed-Sun">Wednesday–Sunday</option>
+                <option value="Tue-Fri">Tuesday–Friday</option>
+                <option value="Sun-Thu">Sunday–Thursday</option>
+              </select>
+            </label>
+          </div>
+          <p class="employee-edit-note">Employee IDs must be six digits. Work status is calculated from the schedule.</p>
+          <div class="form-actions">
+            <p class="form-feedback" id="employee-add-feedback" role="status" aria-live="polite"></p>
+            <button class="secondary-button" type="button" data-close-dialog>Cancel</button>
+            <button class="primary-button" type="submit">Add employee</button>
           </div>
         </form>
       </dialog>

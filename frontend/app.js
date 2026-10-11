@@ -10,16 +10,27 @@ const alertForm = document.querySelector("#alert-form");
 const employeeEditDialog = document.querySelector("#employee-edit-dialog");
 const employeeEditForm = document.querySelector("#employee-edit-form");
 const employeeEditFeedback = document.querySelector("#employee-edit-feedback");
+const employeeAddDialog = document.querySelector("#employee-add-dialog");
+const employeeAddForm = document.querySelector("#employee-add-form");
+const employeeAddFeedback = document.querySelector("#employee-add-feedback");
+const liveLocationRows = document.querySelector("#live-location-rows");
 const sessionToken = localStorage.getItem("fieldcastSessionToken") || "";
+const EMPLOYEE_PAGE_SIZE = 100;
+const LIVE_LOCATION_REFRESH_MS = 30_000;
 
 let employees = [];
 let locations = [];
+let liveLocations = [];
 let selectedLocationId = "";
+let employeePage = 1;
 let employeesLoading = true;
 let employeeLoadError = "";
 let weatherMap;
 let weatherMapLayers;
 let weatherRequestId = 0;
+let employeeLocationsMap;
+let employeeLocationsLayer;
+let liveLocationRequestId = 0;
 
 function authenticatedFetch(url, options = {}) {
   const headers = new Headers(options.headers);
@@ -127,6 +138,11 @@ function setWeatherStatus(message, error = false) {
   status.classList.toggle("weather-map-status-error", error);
 }
 
+function setWeatherFeedStatus(label, note) {
+  document.querySelector("#weather-feed-status").textContent = label;
+  document.querySelector("#weather-feed-note").textContent = note;
+}
+
 function addWeatherMetric(label, value, className = "") {
   const card = document.createElement("div");
   const name = document.createElement("span");
@@ -224,6 +240,136 @@ function renderWeatherMap(data) {
   window.requestAnimationFrame(() => map.invalidateSize());
 }
 
+function getEmployeeLocationsMap() {
+  if (!window.L) {
+    throw new Error("The map library could not be loaded. Shared coordinates are listed below.");
+  }
+  if (!employeeLocationsMap) {
+    employeeLocationsMap = window.L.map(document.querySelector("#employee-locations-map"), {
+      scrollWheelZoom: false,
+    }).setView([39.8283, -98.5795], 4);
+    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 18,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
+    }).addTo(employeeLocationsMap);
+    employeeLocationsLayer = window.L.layerGroup().addTo(employeeLocationsMap);
+  }
+  return employeeLocationsMap;
+}
+
+function formatLiveLocationTime(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "Time unavailable"
+    : new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+function renderLiveLocations() {
+  const emptyMessage = document.querySelector("#live-locations-empty");
+  liveLocationRows.replaceChildren();
+  emptyMessage.hidden = liveLocations.length > 0;
+  emptyMessage.textContent = liveLocations.length === 0
+    ? "No employees have reported a location in the last five minutes. Employees can enable location sharing in the Fieldcast mobile app."
+    : "";
+
+  for (const location of liveLocations) {
+    const row = document.createElement("tr");
+    const employeeCell = document.createElement("td");
+    const coordinatesCell = document.createElement("td");
+    const updatedCell = document.createElement("td");
+    employeeCell.textContent = `${location.fullName} · ID ${location.userId}`;
+    coordinatesCell.textContent = `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`;
+    updatedCell.textContent = formatLiveLocationTime(location.updatedAt);
+    row.append(employeeCell, coordinatesCell, updatedCell);
+    liveLocationRows.append(row);
+  }
+
+  const mapStatus = document.querySelector("#live-locations-status");
+  let mapError = "";
+  try {
+    const map = getEmployeeLocationsMap();
+    employeeLocationsLayer.clearLayers();
+    const bounds = [];
+    const renderer = window.L.canvas();
+    for (const location of liveLocations) {
+      const point = [location.latitude, location.longitude];
+      const popup = document.createElement("div");
+      const name = document.createElement("strong");
+      const userId = document.createElement("span");
+      const updated = document.createElement("span");
+      popup.className = "live-location-popup";
+      name.textContent = location.fullName;
+      userId.textContent = `Employee ID ${location.userId}`;
+      updated.textContent = `Last update: ${formatLiveLocationTime(location.updatedAt)}`;
+      popup.append(name, userId, updated);
+      window.L.circleMarker(point, {
+        radius: 8,
+        color: "#fff",
+        weight: 2,
+        fillColor: "#50d7a0",
+        fillOpacity: 0.95,
+        renderer,
+      }).addTo(employeeLocationsLayer).bindPopup(popup);
+      bounds.push(point);
+    }
+    if (bounds.length > 1) {
+      map.fitBounds(bounds, { padding: [32, 32], maxZoom: 12 });
+    } else if (bounds.length === 1) {
+      map.setView(bounds[0], 12);
+    } else {
+      map.setView([39.8283, -98.5795], 4);
+    }
+    window.requestAnimationFrame(() => map.invalidateSize());
+    mapStatus.classList.remove("weather-map-status-error");
+  } catch (error) {
+    mapStatus.classList.add("weather-map-status-error");
+    mapError = error instanceof Error ? error.message : "Unable to render the location map.";
+    console.error("Failed to render employee locations map.", error);
+  }
+  return mapError;
+}
+
+async function loadLiveLocations() {
+  const requestId = ++liveLocationRequestId;
+  const status = document.querySelector("#live-locations-status");
+  status.textContent = "Loading opted-in employee locations…";
+  status.classList.remove("weather-map-status-error");
+  try {
+    const response = await authenticatedFetch("/api/admin/employee-locations");
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `Location API returned HTTP ${response.status}.`);
+    if (!Array.isArray(result)) throw new Error("Location API response must be an array.");
+    if (requestId !== liveLocationRequestId) return;
+    liveLocations = result.map((location) => ({
+      userId: String(location.userId),
+      fullName: String(location.fullName),
+      latitude: Number(location.latitude),
+      longitude: Number(location.longitude),
+      updatedAt: String(location.updatedAt),
+    }));
+    if (liveLocations.some((location) =>
+      !Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)
+      || Math.abs(location.latitude) > 90 || Math.abs(location.longitude) > 180
+    )) {
+      throw new Error("Location API returned invalid coordinates.");
+    }
+    const mapError = renderLiveLocations();
+    const checkedAt = new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date());
+    status.textContent = `${liveLocations.length} live location${liveLocations.length === 1 ? "" : "s"} · checked at ${checkedAt}. Refreshes every 30 seconds.${mapError ? ` ${mapError}` : ""}`;
+    status.classList.toggle("weather-map-status-error", Boolean(mapError));
+  } catch (error) {
+    if (requestId !== liveLocationRequestId) return;
+    const message = error instanceof Error ? error.message : "Unable to load shared employee locations.";
+    liveLocations = [];
+    renderLiveLocations();
+    status.textContent = /HTTP (401|403)/.test(message)
+      ? "Manager sign-in is required to view shared employee locations."
+      : message;
+    status.classList.add("weather-map-status-error");
+    console.error("Failed to load shared employee locations.", error);
+  }
+}
+
 async function loadSelectedLocationWeather(keepMapView = false) {
   const requestId = ++weatherRequestId;
   const selectedLocation = locations.find((location) => location.id === selectedLocationId);
@@ -232,17 +378,16 @@ async function loadSelectedLocationWeather(keepMapView = false) {
   if (!selectedLocation) {
     document.querySelector("#weather-map-location").textContent = "Choose a work site to view its local weather.";
     setWeatherStatus("Waiting for a selected location.");
+    setWeatherFeedStatus("Waiting", "Choose a work site to load its weather.");
     return;
   }
 
   document.querySelector("#weather-map-location").textContent =
     [selectedLocation.name, selectedLocation.address].filter(Boolean).join(" · ");
   setWeatherStatus("Loading the selected site's location and live NWS conditions...");
+  setWeatherFeedStatus("Loading…", "Fetching National Weather Service conditions.");
 
   try {
-    const map = getWeatherMap();
-    weatherMapLayers.clearLayers();
-    if (!keepMapView) map.setView([39.8283, -98.5795], 4);
     const response = await fetch(`/api/weather?locationId=${encodeURIComponent(selectedLocation.id)}`);
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || `Weather API returned HTTP ${response.status}.`);
@@ -274,7 +419,15 @@ async function loadSelectedLocationWeather(keepMapView = false) {
         ? "Not reported"
         : `${forecast.relativeHumidity}%`,
     );
-    renderWeatherMap(result);
+    let mapError = "";
+    try {
+      const map = getWeatherMap();
+      if (!keepMapView) map.setView([39.8283, -98.5795], 4);
+      renderWeatherMap(result);
+    } catch (error) {
+      mapError = error instanceof Error ? error.message : "Unable to render the weather map.";
+      console.error("Failed to render the weather map.", error);
+    }
 
     const forecastStart = forecast.startTime
       ? new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(forecast.startTime))
@@ -286,21 +439,37 @@ async function loadSelectedLocationWeather(keepMapView = false) {
     const checkedAt = result.updatedAt
       ? new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date(result.updatedAt))
       : null;
+    const feedTemperature = forecast.temperature === null || forecast.temperature === undefined
+      ? ""
+      : `${forecast.temperature}°${forecast.temperatureUnit || "F"}`;
+    const feedCondition = forecast.shortForecast || "Current conditions";
+    const feedStatus = [feedCondition, feedTemperature].filter(Boolean).join(" · ");
+    const feedWind = `${forecast.windSpeed || "Wind n/a"}${forecast.windDirection ? ` ${forecast.windDirection}` : ""}`;
+    const feedRain = Number.isFinite(precipitationChance) ? `${precipitationChance}%` : "n/a";
+    const feedHumidity = forecast.relativeHumidity === null || forecast.relativeHumidity === undefined
+      ? "n/a"
+      : `${forecast.relativeHumidity}%`;
+    const feedNote = [
+      `Wind ${feedWind} · Rain ${feedRain} · Humidity ${feedHumidity}`,
+      checkedAt ? `Updated ${checkedAt}` : "",
+      result.alertsError ? "Active alerts unavailable." : "",
+      mapError ? `Map unavailable: ${mapError}` : "",
+    ].filter(Boolean).join(" ");
+    setWeatherFeedStatus(feedStatus, feedNote);
     const locationPrecision = result.location.geocodePrecision === "locality"
       ? "Exact street address was not found; weather is for the nearby locality."
       : result.location.geocodePrecision === "configured-site" && selectedLocation.address
         ? "The address could not be geocoded; weather is using the stored work-site coordinates."
       : null;
     setWeatherStatus(
-      `NWS hourly forecast for ${forecastStart}${checkedAt ? ` · checked at ${checkedAt}` : ""}.${locationPrecision ? ` ${locationPrecision}` : ""} ${alertStatus}`,
-      Boolean(result.alertsError),
+      `NWS hourly forecast for ${forecastStart}${checkedAt ? ` · checked at ${checkedAt}` : ""}.${locationPrecision ? ` ${locationPrecision}` : ""} ${alertStatus}${mapError ? ` Weather map unavailable: ${mapError}` : ""}`,
+      Boolean(result.alertsError || mapError),
     );
   } catch (error) {
     if (requestId !== weatherRequestId) return;
-    setWeatherStatus(
-      error instanceof Error ? error.message : "Unable to load weather for this work site.",
-      true,
-    );
+    const message = error instanceof Error ? error.message : "Unable to load weather for this work site.";
+    setWeatherStatus(message, true);
+    setWeatherFeedStatus("Unavailable", message);
     console.error("Failed to load NWS weather for the selected work site.", error);
   }
 }
@@ -378,6 +547,7 @@ function setPage(selectedPage) {
 
   if (selectedPage === "overview") renderOverview();
   if (selectedPage === "employees") renderEmployees();
+  if (selectedPage === "live-locations") loadLiveLocations();
 }
 
 function renderOverview() {
@@ -392,8 +562,11 @@ function renderOverview() {
         : "Coordinates not configured")
     : workSite.address || "Address not set";
 
-  document.querySelector("#employee-count").textContent = String(employees.length);
-  document.querySelector("#active-employee-note").textContent = `${workingEmployees} working now · ${employees.length - workingEmployees} off shift`;
+  document.querySelector("#employee-count").textContent =
+    employeesLoading ? "…" : employeeLoadError ? "—" : String(employees.length);
+  document.querySelector("#active-employee-note").textContent = employeesLoading
+    ? "Loading employee roster…"
+    : employeeLoadError || `${workingEmployees} working now · ${employees.length - workingEmployees} off shift`;
   document.querySelector("#open-alert-count").textContent = String(openAlerts);
   document.querySelector("#nav-alert-count").textContent = String(openAlerts);
   document.querySelector("#overview-site-name").textContent = siteName;
@@ -456,6 +629,8 @@ function renderOverview() {
 }
 
 function renderEmployees() {
+  document.querySelector("#add-employee-button").disabled =
+    employeesLoading || Boolean(employeeLoadError) || locations.length === 0;
   const search = employeeSearch.value.trim().toLowerCase();
   const selectedStatus = employeeFilter.value;
   const selectedLocation = employeeLocationFilter.value;
@@ -468,14 +643,26 @@ function renderEmployees() {
     return matchesSearch && matchesStatus && matchesLocation;
   });
 
+  const pageCount = Math.max(1, Math.ceil(filteredEmployees.length / EMPLOYEE_PAGE_SIZE));
+  employeePage = Math.min(employeePage, pageCount);
+  const startIndex = (employeePage - 1) * EMPLOYEE_PAGE_SIZE;
+  const pageEmployees = filteredEmployees.slice(startIndex, startIndex + EMPLOYEE_PAGE_SIZE);
   employeeRows.replaceChildren();
   const emptyMessage = document.querySelector("#employee-empty");
   emptyMessage.textContent = employeesLoading
     ? "Loading employees..."
     : employeeLoadError || "No employees match your search.";
   emptyMessage.hidden = filteredEmployees.length > 0;
+  const pagination = document.querySelector("#employee-pagination");
+  const pageStatus = document.querySelector("#employee-page-status");
+  const previousPageButton = document.querySelector("#employee-previous-page");
+  const nextPageButton = document.querySelector("#employee-next-page");
+  pagination.hidden = employeesLoading || Boolean(employeeLoadError) || filteredEmployees.length === 0;
+  pageStatus.textContent = `Showing ${startIndex + 1}–${Math.min(startIndex + EMPLOYEE_PAGE_SIZE, filteredEmployees.length)} of ${filteredEmployees.length} employees`;
+  previousPageButton.disabled = employeePage <= 1;
+  nextPageButton.disabled = employeePage >= pageCount;
 
-  for (const employee of filteredEmployees) {
+  for (const employee of pageEmployees) {
     const row = document.createElement("tr");
     const personCell = document.createElement("td");
     const person = document.createElement("div");
@@ -541,6 +728,22 @@ function showEmployeeEditor(employee) {
   employeeEditFeedback.classList.remove("form-feedback-error");
   employeeEditDialog.showModal();
   employeeEditForm.elements.fullName.focus();
+}
+
+function showEmployeeAddDialog() {
+  employeeAddForm.reset();
+  const locationSelect = employeeAddForm.elements.locationId;
+  locationSelect.replaceChildren(...locations.map((location) => {
+    const option = document.createElement("option");
+    option.value = location.id;
+    option.textContent = [location.name, location.address].filter(Boolean).join(" — ");
+    return option;
+  }));
+  locationSelect.value = selectedLocationId || locations[0]?.id || "";
+  employeeAddFeedback.textContent = "";
+  employeeAddFeedback.classList.remove("form-feedback-error");
+  employeeAddDialog.showModal();
+  employeeAddForm.elements.userId.focus();
 }
 
 function renderEmployeeLocationEditor() {
@@ -663,6 +866,8 @@ for (const button of navigationButtons) {
   button.addEventListener("click", () => setPage(button.dataset.page));
 }
 
+document.querySelector("#refresh-live-locations").addEventListener("click", loadLiveLocations);
+
 for (const button of document.querySelectorAll("[data-open-page]")) {
   button.addEventListener("click", () => setPage(button.dataset.openPage));
 }
@@ -672,6 +877,8 @@ document.querySelector("#add-alert-button").addEventListener("click", () => {
   alertDialog.showModal();
   alertForm.elements.title.focus();
 });
+
+document.querySelector("#add-employee-button").addEventListener("click", showEmployeeAddDialog);
 
 document.querySelectorAll("[data-close-dialog]").forEach((button) => {
   button.addEventListener("click", () => button.closest("dialog").close());
@@ -718,9 +925,68 @@ employeeEditForm.addEventListener("submit", async (event) => {
   }
 });
 
-employeeSearch.addEventListener("input", renderEmployees);
-employeeFilter.addEventListener("change", renderEmployees);
-employeeLocationFilter.addEventListener("change", renderEmployees);
+employeeAddForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const submitButton = employeeAddForm.querySelector("button[type='submit']");
+  const formData = new FormData(employeeAddForm);
+  const payload = Object.fromEntries(formData.entries());
+  const userId = String(payload.userId).trim();
+  if (employees.some((employee) => employee.id === userId)) {
+    employeeAddFeedback.textContent = "That employee ID already exists. Edit the existing employee instead.";
+    employeeAddFeedback.classList.add("form-feedback-error");
+    return;
+  }
+
+  submitButton.disabled = true;
+  employeeAddFeedback.textContent = "Adding employee...";
+  employeeAddFeedback.classList.remove("form-feedback-error");
+  try {
+    const response = await authenticatedFetch("/api/admin/employees/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ employees: [payload] }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `Add failed with HTTP ${response.status}.`);
+    if (result.added !== 1 || result.rejectedCount) {
+      throw new Error(result.rejected?.join("; ") || "The employee could not be added.");
+    }
+
+    employeeAddDialog.close();
+    employeeSearch.value = userId;
+    employeePage = 1;
+    await loadEmployees();
+    setPage("employees");
+  } catch (error) {
+    employeeAddFeedback.textContent = error instanceof Error ? error.message : "Unable to add employee.";
+    employeeAddFeedback.classList.add("form-feedback-error");
+  } finally {
+    submitButton.disabled = false;
+  }
+});
+
+employeeSearch.addEventListener("input", () => {
+  employeePage = 1;
+  renderEmployees();
+});
+employeeFilter.addEventListener("change", () => {
+  employeePage = 1;
+  renderEmployees();
+});
+employeeLocationFilter.addEventListener("change", () => {
+  employeePage = 1;
+  renderEmployees();
+});
+document.querySelector("#employee-previous-page").addEventListener("click", () => {
+  if (employeePage > 1) {
+    employeePage -= 1;
+    renderEmployees();
+  }
+});
+document.querySelector("#employee-next-page").addEventListener("click", () => {
+  employeePage += 1;
+  renderEmployees();
+});
 overviewLocationSelect.addEventListener("change", () => {
   selectedLocationId = overviewLocationSelect.value;
   renderOverview();
@@ -800,6 +1066,9 @@ loadLocations();
 window.setInterval(() => {
   if (selectedLocationId) loadSelectedLocationWeather(true);
 }, 10 * 60 * 1000);
+window.setInterval(() => {
+  if (!document.querySelector('[data-view="live-locations"]').hidden) loadLiveLocations();
+}, LIVE_LOCATION_REFRESH_MS);
 
 async function loadEmployees() {
   try {

@@ -49,6 +49,13 @@ Employees page. Changes are saved through `PUT /api/admin/employees/<userId>`.
 Sign in with a manager ID configured in `MANAGER_IDS`; employee IDs are fixed,
 and working status is recalculated from the saved schedule.
 
+Managers can view recent live locations shared by employees on the Live locations
+page. The manager-only `GET /api/admin/employee-locations` endpoint returns only
+employees who opted in through the mobile app; turning sharing off deletes that
+employee's stored location, and locations without a device update in the last five
+minutes are excluded from the live view. Stored employee locations are deleted
+after 24 hours.
+
 The overview work-site selector lists locations from the main database. The
 map geocodes a selected location's address with the U.S. Census Geocoder, then
 falls back to its locality through OpenStreetMap Nominatim. If geocoding is

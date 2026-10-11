@@ -175,6 +175,7 @@ ALERT_CACHE_SECONDS = 300     # one NWS call per grid cell per 5 minutes
 SHELTER_CACHE_SECONDS = 600
 SHELTER_BUFFER_MILES = 5      # shelters are fetched around the cell center, so pad the radius
 LOCATION_TTL_HOURS = 24       # employee locations older than this are deleted
+LIVE_LOCATION_MAX_AGE_MINUTES = 5
 MIN_LOCATION_INTERVAL_SECONDS = int(os.environ.get("MIN_LOCATION_INTERVAL_SECONDS", "10"))
 # Minimum gap between calls to /api/alerts and /api/shelters per logged-in user.
 API_MIN_INTERVAL_SECONDS = int(os.environ.get("API_MIN_INTERVAL_SECONDS", "5"))
@@ -1535,6 +1536,7 @@ ROUTES = [(m, re.compile(p), name, access) for m, p, name, access in [
     ("GET", r"/api/weather", "h_weather", "public"),
     ("GET", r"/api/me", "h_me", "auth"),
     ("GET", r"/api/employees", "h_employees_list", "manager"),
+    ("GET", r"/api/admin/employee-locations", "h_employee_locations", "manager"),
     ("PUT", r"/api/admin/employees/([0-9]{6})", "h_employee_update", "manager"),
     ("GET", r"/api/locations", "h_locations", "manager"),
     ("GET", r"/api/locations/(\d+)", "h_location_get", "auth"),
@@ -1668,6 +1670,26 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
             "locationName": r["location_name"], "locationAddress": r["location_address"],
             "locationTimezone": r["tz"],
         } for r in rows])
+
+    def h_employee_locations(self, employee, query):
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=LIVE_LOCATION_MAX_AGE_MINUTES)).isoformat()
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT e.user_id, e.full_name, l.lat, l.lon, l.updated_at "
+                "FROM employee_location l "
+                "JOIN employees e ON e.user_id = l.user_id "
+                "JOIN employee_flags f ON f.user_id = l.user_id "
+                "WHERE f.location_consent = 1 AND l.updated_at >= ? "
+                "ORDER BY lower(e.full_name), e.user_id",
+                (cutoff,),
+            ).fetchall()
+        self.send_json([{
+            "userId": row["user_id"],
+            "fullName": row["full_name"],
+            "latitude": row["lat"],
+            "longitude": row["lon"],
+            "updatedAt": row["updated_at"],
+        } for row in rows])
 
     def h_employee_update(self, employee, query, user_id):
         payload = self.read_json_object()
