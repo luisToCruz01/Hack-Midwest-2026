@@ -319,11 +319,114 @@ h2 {
   white-space: pre-line;
 }
 
+#weather-feed-card[data-weather-state="connected"] .metric-value {
+  color: var(--green);
+}
+
+#weather-feed-card[data-weather-state="error"] .metric-value {
+  color: var(--amber);
+}
+
 .content-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
   gap: 1rem;
   margin-top: 1rem;
+}
+
+.employee-portal {
+  display: grid;
+  gap: 1rem;
+}
+
+.employee-location-card,
+.employee-email-card,
+.employee-notifications-card {
+  padding: 1.25rem;
+}
+
+.employee-location-card h2,
+.employee-email-card h2,
+.employee-notifications-card h2 {
+  margin: 0.25rem 0 0;
+}
+
+.employee-privacy-copy,
+.employee-location-limit {
+  max-width: 75ch;
+  color: #a8bfbb;
+  font-size: 0.85rem;
+  line-height: 1.65;
+}
+
+.employee-location-limit {
+  color: var(--amber);
+}
+
+.employee-location-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin-top: 1rem;
+}
+
+.employee-email-option {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-top: 1rem;
+  color: #dce9e5;
+  font-size: 0.9rem;
+}
+
+.employee-email-option input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--green);
+}
+
+.employee-email-address {
+  margin: 1rem 0 0;
+  color: #a8bfbb;
+  font-size: 0.82rem;
+}
+
+.employee-notification-list {
+  display: grid;
+}
+
+.employee-notification {
+  display: grid;
+  gap: 0.55rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid rgb(145 170 167 / 10%);
+}
+
+.employee-notification:last-child {
+  border-bottom: 0;
+}
+
+.employee-notification-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: #e8f0ed;
+  text-transform: capitalize;
+}
+
+.employee-notification p {
+  margin: 0;
+  color: #b8cbc6;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.employee-notification-meta {
+  color: var(--muted);
+  font-size: 0.72rem;
 }
 
 .content-card {
@@ -887,6 +990,41 @@ tbody tr:last-child td {
   border-color: rgb(118 184 245 / 22%);
   color: #a9d3fc;
   background: rgb(118 184 245 / 8%);
+}
+
+.status-delivery-sent {
+  border-color: rgb(80 215 160 / 20%);
+  color: #85e5b9;
+  background: rgb(80 215 160 / 8%);
+}
+
+.status-delivery-simulated {
+  border-color: rgb(244 200 121 / 22%);
+  color: #f4d394;
+  background: rgb(244 200 121 / 8%);
+}
+
+.status-delivery-failed {
+  border-color: rgb(239 89 97 / 25%);
+  color: #ff9da2;
+  background: rgb(239 89 97 / 9%);
+}
+
+.delivery-log-note {
+  margin: 0;
+  padding: 0 1.25rem 1rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.delivery-error {
+  display: block;
+  max-width: 320px;
+  margin-top: 0.35rem;
+  color: #ff9da2;
+  font-size: 0.7rem;
+  white-space: normal;
 }
 
 .row-actions {

@@ -39,6 +39,7 @@
             Alerts <span class="nav-count" id="nav-alert-count">0</span>
           </button>
           <button class="nav-button" type="button" data-page="worksite">Work site</button>
+          <button class="nav-button" id="delivery-log-nav" type="button" data-page="delivery-log" hidden>Delivery log</button>
         </nav>
         <a class="login-button" href="./login.html" id="logout-link">Log out</a>
       </header>
@@ -65,10 +66,10 @@
               <p class="metric-value" id="open-alert-count">0</p>
               <p class="metric-note">Require administrator attention</p>
             </article>
-            <article class="metric-card">
+            <article class="metric-card" id="weather-feed-card" data-weather-state="loading">
               <div class="card-label"><span class="card-icon icon-blue" aria-hidden="true">☼</span> Weather feed</div>
-              <p class="metric-value metric-value-small">Not connected</p>
-              <p class="metric-note">Weather provider setup required</p>
+              <p class="metric-value metric-value-small" id="weather-feed-status" aria-live="polite">Connecting…</p>
+              <p class="metric-note" id="weather-feed-note">Checking the National Weather Service forecast.</p>
             </article>
           </div>
 
@@ -223,6 +224,41 @@
             </div>
           </form>
           <p class="prototype-note">Changes are temporary and reset when you reload this prototype.</p>
+        </section>
+
+        <section class="page-view" data-view="delivery-log" aria-labelledby="delivery-log-title" hidden>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">ADMIN CONSOLE <span class="eyebrow-dot"></span> NOTIFICATIONS</p>
+              <h1 id="delivery-log-title">Delivery log</h1>
+              <p class="page-description">Review the latest notification attempts and their recorded delivery status.</p>
+            </div>
+            <button class="secondary-button" id="refresh-delivery-log" type="button">Refresh</button>
+          </div>
+          <section class="content-card table-card" aria-label="Notification delivery records">
+            <div class="table-toolbar">
+              <p class="toolbar-caption"><span class="live-dot"></span><span id="delivery-log-summary">Loading notification records...</span></p>
+              <label class="filter-field">
+                <span class="visually-hidden">Filter notifications by delivery status</span>
+                <select id="delivery-log-filter">
+                  <option value="all">All statuses</option>
+                  <option value="sent">Sent</option>
+                  <option value="simulated">Simulated</option>
+                  <option value="failed">Failed</option>
+                </select>
+              </label>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr><th scope="col">Queued</th><th scope="col">Attempted</th><th scope="col">Recipient</th><th scope="col">Type</th><th scope="col">Channel</th><th scope="col">Status</th><th scope="col">Message</th></tr>
+                </thead>
+                <tbody id="delivery-log-rows"></tbody>
+              </table>
+            </div>
+            <p class="table-empty" id="delivery-log-empty" aria-live="polite" hidden></p>
+            <p class="delivery-log-note">“Sent” means the configured provider accepted the request; it does not confirm delivery to the recipient. “Simulated” means no configured provider handled that channel.</p>
+          </section>
         </section>
       </main>
 

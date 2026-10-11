@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Fieldcast employee alerts and notification preferences." />
+    <title>Employee Alerts | Fieldcast</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./employee.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="./employee.html" aria-label="Fieldcast employee alerts">
+          <span class="brand-mark" aria-hidden="true">W</span>
+          <span>Fieldcast</span>
+          <span class="brand-divider" aria-hidden="true"></span>
+          <span class="brand-section">Employee</span>
+        </a>
+        <a class="login-button" href="./login.html" id="employee-logout">Log out</a>
+      </header>
+
+      <main class="main-content employee-portal">
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">FIELDCAST <span class="eyebrow-dot"></span> PERSONAL SAFETY</p>
+            <h1 id="employee-greeting">Your alerts</h1>
+            <p class="page-description">Review alerts for your current location and manage how Fieldcast contacts you.</p>
+          </div>
+        </div>
+
+        <section class="content-card employee-location-card" aria-labelledby="location-sharing-title">
+          <div class="card-heading">
+            <div>
+              <p class="eyebrow">LOCATION-BASED ALERTS</p>
+              <h2 id="location-sharing-title">Alerts wherever you are</h2>
+            </div>
+            <span class="status-pill status-off-shift" id="location-sharing-state">Location off</span>
+          </div>
+          <p class="employee-privacy-copy">
+            If you opt in, this page checks your current location about once a minute and checks for
+            serious National Weather Service alerts near you. Your latest location is removed when
+            you turn sharing off and otherwise expires after 24 hours.
+          </p>
+          <p class="employee-location-limit">
+            This is a website: location checks require this page to remain open. Your browser or
+            operating system may pause checks in the background. It does not track you after the
+            page is closed. Only your most recent location is stored; expired locations are
+            periodically purged after 24 hours.
+          </p>
+          <div class="employee-location-actions">
+            <button class="primary-button" id="location-sharing-button" type="button">Turn on location alerts</button>
+            <p class="form-feedback" id="location-sharing-feedback" role="status" aria-live="polite">
+              Location sharing is off.
+            </p>
+          </div>
+        </section>
+
+        <section class="content-card employee-email-card" aria-labelledby="email-alerts-title">
+          <div class="card-heading">
+            <div>
+              <p class="eyebrow">OPTIONAL EMAIL NOTIFICATIONS</p>
+              <h2 id="email-alerts-title">Email alerts</h2>
+            </div>
+          </div>
+          <p class="employee-email-address" id="employee-email-address">Loading email address...</p>
+          <label class="employee-email-option">
+            <input id="email-alerts-checkbox" type="checkbox" disabled />
+            <span>Send safety alerts to me by email.</span>
+          </label>
+          <p class="employee-privacy-copy">
+            Email alerts require an address on file and the organization’s Gmail SMTP service to be
+            configured. You can turn email alerts off here at any time.
+          </p>
+          <p class="form-feedback" id="email-alerts-feedback" role="status" aria-live="polite"></p>
+        </section>
+
+        <section class="content-card employee-notifications-card" aria-labelledby="personal-notifications-title">
+          <div class="card-heading">
+            <div>
+              <p class="eyebrow">RECENT ACTIVITY</p>
+              <h2 id="personal-notifications-title">Your notifications</h2>
+            </div>
+            <button class="secondary-button" id="refresh-personal-notifications" type="button">Refresh</button>
+          </div>
+          <p class="form-feedback" id="personal-notifications-status" role="status" aria-live="polite">Loading notifications...</p>
+          <div class="employee-notification-list" id="personal-notification-list"></div>
+          <p class="table-empty" id="personal-notifications-empty" hidden>No notifications yet.</p>
+        </section>
+      </main>
+      <footer class="app-footer"><span class="footer-dot"></span> FIELDCAST EMPLOYEE ALERTS <span class="footer-divider">/</span> DEMO SIGN-IN</footer>
+    </div>
+  </body>
+</html>

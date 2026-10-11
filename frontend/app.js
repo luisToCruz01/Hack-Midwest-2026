@@ -1,8 +1,14 @@
 const authToken = sessionStorage.getItem("fieldcastToken");
 if (!authToken) window.location.replace("./login.html");
+const currentUser = JSON.parse(sessionStorage.getItem("fieldcastUser") || "{}");
+if (currentUser.isManager !== true) window.location.replace("./employee.html");
 
 const navigationButtons = document.querySelectorAll("[data-page]");
 const pageViews = document.querySelectorAll("[data-view]");
+const deliveryLogRows = document.querySelector("#delivery-log-rows");
+const deliveryLogFilter = document.querySelector("#delivery-log-filter");
+const deliveryLogEmpty = document.querySelector("#delivery-log-empty");
+const deliveryLogSummary = document.querySelector("#delivery-log-summary");
 const employeeRows = document.querySelector("#employee-rows");
 const employeeSearch = document.querySelector("#employee-search");
 const employeeFilter = document.querySelector("#employee-filter");
@@ -13,6 +19,8 @@ const alertForm = document.querySelector("#alert-form");
 
 let employees = [];
 let locations = [];
+let deliveryRecords = [];
+let deliveryLogError = "";
 let selectedLocationId = "";
 let employeesLoading = true;
 let employeeLoadError = "";
@@ -107,6 +115,13 @@ function setWeatherStatus(message, error = false) {
   const status = document.querySelector("#weather-map-status");
   status.textContent = message;
   status.classList.toggle("weather-map-status-error", error);
+}
+
+function setWeatherFeedStatus(state, status, note) {
+  const card = document.querySelector("#weather-feed-card");
+  card.dataset.weatherState = state;
+  document.querySelector("#weather-feed-status").textContent = status;
+  document.querySelector("#weather-feed-note").textContent = note;
 }
 
 function addWeatherMetric(label, value, className = "") {
@@ -214,12 +229,14 @@ async function loadSelectedLocationWeather(keepMapView = false) {
   if (!selectedLocation) {
     document.querySelector("#weather-map-location").textContent = "Choose a work site to view its local weather.";
     setWeatherStatus("Waiting for a selected location.");
+    setWeatherFeedStatus("idle", "Select a site", "Choose a work site to load NWS conditions.");
     return;
   }
 
   document.querySelector("#weather-map-location").textContent =
     [selectedLocation.name, selectedLocation.address].filter(Boolean).join(" · ");
   setWeatherStatus("Loading the selected site's location and live NWS conditions...");
+  setWeatherFeedStatus("loading", "Connecting…", "Requesting the NWS hourly forecast.");
 
   try {
     const map = getWeatherMap();
@@ -231,6 +248,19 @@ async function loadSelectedLocationWeather(keepMapView = false) {
     if (requestId !== weatherRequestId) return;
 
     const forecast = result.forecast;
+    const temperature = forecast.temperature === null || forecast.temperature === undefined
+      ? ""
+      : `${forecast.temperature}°${forecast.temperatureUnit || "F"}`;
+    const alertSummary = result.alertsError
+      ? "Active alerts unavailable."
+      : result.alerts.length
+        ? `${result.alerts.length} active alert${result.alerts.length === 1 ? "" : "s"}.`
+        : "No active alerts.";
+    setWeatherFeedStatus(
+      "connected",
+      "Connected",
+      `${forecast.shortForecast || "NWS forecast available"}${temperature ? ` · ${temperature}` : ""} · ${alertSummary}`,
+    );
     addWeatherMetric("NWS hourly forecast", forecast.shortForecast || "Not reported");
     addWeatherMetric(
       "Temperature",
@@ -279,6 +309,11 @@ async function loadSelectedLocationWeather(keepMapView = false) {
     );
   } catch (error) {
     if (requestId !== weatherRequestId) return;
+    setWeatherFeedStatus(
+      "error",
+      "Unavailable",
+      error instanceof Error ? error.message : "Unable to load NWS weather for this work site.",
+    );
     setWeatherStatus(
       error instanceof Error ? error.message : "Unable to load weather for this work site.",
       true,
@@ -367,6 +402,82 @@ function setPage(selectedPage) {
 
   if (selectedPage === "overview") renderOverview();
   if (selectedPage === "employees") renderEmployees();
+  if (selectedPage === "delivery-log") loadDeliveryLog();
+}
+
+function renderDeliveryLog() {
+  const selectedStatus = deliveryLogFilter.value;
+  const filteredRecords = deliveryRecords.filter((record) =>
+    selectedStatus === "all" || record.status === selectedStatus);
+  deliveryLogRows.replaceChildren();
+  deliveryLogSummary.textContent = deliveryLogError
+    ? "Unable to load notification records."
+    : `Showing ${filteredRecords.length} of ${deliveryRecords.length} recent records.`;
+  deliveryLogEmpty.textContent = deliveryLogError || "No notification records match this status.";
+  deliveryLogEmpty.hidden = filteredRecords.length > 0 && !deliveryLogError;
+
+  for (const record of filteredRecords) {
+    const row = document.createElement("tr");
+    const queued = document.createElement("td");
+    const attempted = document.createElement("td");
+    const recipient = document.createElement("td");
+    const type = document.createElement("td");
+    const channel = document.createElement("td");
+    const status = document.createElement("td");
+    const statusPill = document.createElement("span");
+    const deliveryError = document.createElement("span");
+    const message = document.createElement("td");
+    const queuedAt = new Date(record.created_at);
+    const attemptedAt = record.delivery_attempted_at ? new Date(record.delivery_attempted_at) : null;
+
+    queued.textContent = Number.isNaN(queuedAt.getTime())
+      ? record.created_at
+      : new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(queuedAt);
+    attempted.textContent = !attemptedAt
+      ? "—"
+      : Number.isNaN(attemptedAt.getTime())
+        ? record.delivery_attempted_at
+        : new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(attemptedAt);
+    recipient.textContent = `${record.employee_name} · ${record.user_id}`;
+    type.textContent = record.kind.replaceAll("_", " ");
+    channel.textContent = record.channel.split(",").join(", ");
+    statusPill.className = `status-pill status-delivery-${record.status}`;
+    statusPill.textContent = record.status;
+    status.append(statusPill);
+    if (record.delivery_error) {
+      deliveryError.className = "delivery-error";
+      deliveryError.textContent = record.delivery_error;
+      status.append(deliveryError);
+    }
+    message.textContent = record.message;
+    row.append(queued, attempted, recipient, type, channel, status, message);
+    deliveryLogRows.append(row);
+  }
+}
+
+async function loadDeliveryLog() {
+  deliveryLogSummary.textContent = "Loading notification records...";
+  deliveryLogEmpty.hidden = true;
+  try {
+    const response = await fetch("/api/admin/notifications", {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    const result = await response.json();
+    if (response.status === 401) {
+      sessionStorage.removeItem("fieldcastToken");
+      sessionStorage.removeItem("fieldcastUser");
+      window.location.replace("./login.html");
+      return;
+    }
+    if (!response.ok) throw new Error(result.error || `Notification API returned HTTP ${response.status}.`);
+    if (!Array.isArray(result)) throw new Error("Notification API response must be an array.");
+    deliveryRecords = result;
+    deliveryLogError = "";
+  } catch (error) {
+    deliveryLogError = error instanceof Error ? error.message : "Unable to load notification records.";
+    console.error("Failed to load notification delivery log.", error);
+  }
+  renderDeliveryLog();
 }
 
 function renderOverview() {
@@ -621,6 +732,10 @@ for (const button of navigationButtons) {
   button.addEventListener("click", () => setPage(button.dataset.page));
 }
 
+document.querySelector("#delivery-log-nav").hidden = currentUser.isManager !== true;
+document.querySelector("#refresh-delivery-log").addEventListener("click", loadDeliveryLog);
+deliveryLogFilter.addEventListener("change", renderDeliveryLog);
+
 for (const button of document.querySelectorAll("[data-open-page]")) {
   button.addEventListener("click", () => setPage(button.dataset.openPage));
 }
@@ -767,6 +882,11 @@ async function loadLocations() {
     renderEmployeeLocationFilter();
     renderAll();
   } catch (error) {
+    setWeatherFeedStatus(
+      "error",
+      "Unavailable",
+      error instanceof Error ? error.message : "Unable to load work sites for NWS weather.",
+    );
     overviewLocationSelect.replaceChildren();
     const unavailableOption = document.createElement("option");
     unavailableOption.value = "";

@@ -18,7 +18,7 @@ loginForm.addEventListener("submit", async (event) => {
 
     sessionStorage.setItem("fieldcastToken", result.token);
     sessionStorage.setItem("fieldcastUser", JSON.stringify({ name: result.name, isManager: result.isManager }));
-    window.location.replace("./index.html");
+    window.location.replace(result.isManager ? "./index.html" : "./employee.html");
   } catch (error) {
     loginError.textContent = error.message;
     loginError.hidden = false;

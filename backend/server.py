@@ -23,13 +23,13 @@ Two notification paths
                  lower-confidence ones wait as PENDING for a manager.
                  When the NWS stays quiet for ALL_CLEAR_HOLD_MINUTES after a notice, the same
                  scan sends one all-clear to the people who were told (ALL_CLEAR on/off).
-  Personal path  Mobile app posts a location every ~30 s -> NWS lookup for that spot ->
+  Personal path  Employee portal shares location every ~60 s while open -> NWS lookup for that spot ->
                  if severe, that one person is notified immediately -> if it is a
                  shelter-type emergency, FEMA open shelters are sent as a follow-up.
                  This runs for any consenting employee, wherever they work.
 
 Who can do what
-  Any logged-in employee: own profile, location sharing, own notifications and shelters.
+  Any logged-in employee: own profile, location sharing, email preferences, own notifications and shelters.
   Managers (MANAGER_IDS env var, comma separated): employee roster, recommendations, decisions,
   decision log, facility settings, snapshots, employee import.
 
@@ -39,7 +39,8 @@ Environment (all optional except DATABASE_URL and, for manager features, MANAGER
   AUTO_DECIDE (on/off, default off), AUTO_DECIDE_MIN_CONFIDENCE (low/medium/high),
   ALL_CLEAR (on/off), ALL_CLEAR_HOLD_MINUTES, SNAPSHOT_RETENTION_DAYS,
   API_MIN_INTERVAL_SECONDS, MIN_LOCATION_INTERVAL_SECONDS,
-  NOTIFY_WEBHOOK_URL, NOTIFY_WEBHOOK_TOKEN,
+  NOTIFY_WEBHOOK_URL, NOTIFY_WEBHOOK_TOKEN, SMTP_HOST, SMTP_PORT, SMTP_USERNAME,
+  SMTP_PASSWORD, SMTP_FROM_ADDRESS,
   DEMO_GEO (on = seed made-up facility coordinates, testing only),
   DEMO_FLAGS (on = seed two demo essential/no-telework employees, testing only)
 
@@ -63,7 +64,8 @@ Routes
   POST /api/admin/employees/import         {"employees":[{...}]}  add/update people (manager, 5 MB)
   POST /api/admin/employees/contacts       {"employees":[{"userId","email","phone",...}]}  (manager)
   POST /api/location/consent               {"consent": true}
-  POST /api/location                       {"lat":..,"lon":..}  (the mobile app calls this)
+  POST /api/notifications/consent          {"emailAlerts": true}
+  POST /api/location                       {"lat":..,"lon":..}  (employee portal, while open)
   GET  /api/my/notifications
   GET  /api/decision-log, /api/decision-log/verify            (manager)
   GET/POST /api/entries
@@ -74,14 +76,18 @@ import math
 import os
 import re
 import secrets
+import smtplib
+import ssl
 import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
+from email.utils import parseaddr
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock, Thread
 from time import monotonic
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -195,10 +201,14 @@ AUTO_SCAN_REPEAT_HOURS = 6    # don't re-recommend the same posture for a facili
 ALL_CLEAR = env_on("ALL_CLEAR", "on")
 ALL_CLEAR_HOLD_MINUTES = int(os.environ.get("ALL_CLEAR_HOLD_MINUTES", "20"))
 
-# Where real push/SMS/email delivery happens. If unset, notifications are only recorded
-# with status 'simulated'. If set, each notification is POSTed there as JSON.
+# Where notifications are delivered. If no provider is configured, records are simulated.
 NOTIFY_WEBHOOK_URL = os.environ.get("NOTIFY_WEBHOOK_URL", "")
 NOTIFY_WEBHOOK_TOKEN = os.environ.get("NOTIFY_WEBHOOK_TOKEN", "")
+SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com").strip()
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "").strip()
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "").strip()
+SMTP_FROM_ADDRESS = os.environ.get("SMTP_FROM_ADDRESS", SMTP_USERNAME).strip()
 
 
 # ======================================================================
@@ -218,8 +228,10 @@ CREATE TABLE IF NOT EXISTS employee_flags (
     telework_eligible INTEGER NOT NULL DEFAULT 1,
     email TEXT,
     phone TEXT,
-    location_consent INTEGER NOT NULL DEFAULT 0
+    location_consent INTEGER NOT NULL DEFAULT 0,
+    email_consent INTEGER NOT NULL DEFAULT 0
 );
+ALTER TABLE employee_flags ADD COLUMN IF NOT EXISTS email_consent INTEGER NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS employee_location (
     user_id TEXT PRIMARY KEY REFERENCES employees(user_id),
     lat DOUBLE PRECISION NOT NULL,
@@ -261,8 +273,12 @@ CREATE TABLE IF NOT EXISTS notifications (
     alert_id TEXT,
     channel TEXT NOT NULL,
     message TEXT NOT NULL,
-    status TEXT NOT NULL             -- 'simulated', 'sent' or 'failed'
+    status TEXT NOT NULL,            -- 'simulated', 'sent' or 'failed'
+    delivery_attempted_at TEXT,
+    delivery_error TEXT
 );
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS delivery_attempted_at TEXT;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS delivery_error TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS ux_personal_alert
     ON notifications(user_id, alert_id) WHERE alert_id IS NOT NULL;
 CREATE TABLE IF NOT EXISTS decision_log (
@@ -422,6 +438,7 @@ TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 USER_ID_RE = re.compile(r"^[0-9]{6}$")  # the schema requires exactly six digits
 VALID_DAYS = {"Mon-Fri", "Mon-Thu", "Tue-Sat", "Wed-Sun", "Tue-Fri", "Sun-Thu"}  # schema CHECK list
 PHONE_RE = re.compile(r"^\+?[0-9]{7,15}$")
+EMAIL_RE = re.compile(r"[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+")
 TRUTHY = {"1", "true", "yes", "y", "t"}
 
 
@@ -432,6 +449,11 @@ def to_flag(value):
     if isinstance(value, bool):
         return 1 if value else 0
     return 1 if str(value).strip().lower() in TRUTHY else 0
+
+
+def valid_email_address(value):
+    address = value.strip() if isinstance(value, str) else ""
+    return bool(address and parseaddr(address)[1] == address and EMAIL_RE.fullmatch(address))
 
 
 def clean_employee(rec):
@@ -458,7 +480,7 @@ def clean_employee(rec):
     if phone and not PHONE_RE.match(phone):
         return None, f"{user_id}: phone number is not valid"
     email = str(rec["email"]).strip() if rec.get("email") else None
-    if email and "@" not in email:
+    if email and not valid_email_address(email):
         return None, f"{user_id}: email is not valid"
     return {
         "user_id": user_id, "full_name": name, "location_id": location_id,
@@ -538,7 +560,7 @@ def update_contacts(records):
             if phone and not PHONE_RE.match(phone):
                 summary["rejected"].append(f"{user_id}: phone number is not valid")
                 continue
-            if email and "@" not in email:
+            if email and not valid_email_address(email):
                 summary["rejected"].append(f"{user_id}: email is not valid")
                 continue
             if not conn.execute("SELECT 1 FROM employees WHERE user_id = ?", (user_id,)).fetchone():
@@ -893,6 +915,24 @@ def purge_old_snapshots():
             "(SELECT snapshot_id FROM recommendations WHERE snapshot_id IS NOT NULL)", (cutoff,)).rowcount
 
 
+def purge_expired_locations():
+    """Delete location data at or past its configured retention period."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=LOCATION_TTL_HOURS)).isoformat()
+    with get_db() as conn:
+        return conn.execute("DELETE FROM employee_location WHERE updated_at < ?", (cutoff,)).rowcount
+
+
+def location_cleanup_loop():
+    while True:
+        try:
+            removed = purge_expired_locations()
+            if removed:
+                print(f"Location cleanup: removed {removed} expired location record(s).")
+        except psycopg.Error as err:
+            print(f"Location cleanup database error: {err}")
+        time.sleep(15 * 60)
+
+
 # ======================================================================
 # Rules engine (pure: same inputs always give the same output)
 # ======================================================================
@@ -1047,14 +1087,12 @@ def employee_status(emp, now_local):
 
 def pick_channels(emp, urgency):
     channels = []
+    if emp["email"] and emp["email_consent"]:
+        return ["email"]
     if urgency == "high":
         if emp["location_consent"]:
             channels.append("push")
-        if emp["phone"]:
-            channels.append("sms")
     else:
-        if emp["email"]:
-            channels.append("email")
         if emp["location_consent"]:
             channels.append("push")
     return channels or ["none_on_file"]
@@ -1095,7 +1133,8 @@ def build_package(loc, posture, now_local, headline):
             """SELECT e.user_id, e.full_name, e.shift_start, e.shift_end, e.days_of_week,
                       COALESCE(f.is_essential, 0) AS is_essential,
                       COALESCE(f.telework_eligible, 1) AS telework_eligible,
-                      f.email, f.phone, COALESCE(f.location_consent, 0) AS location_consent
+                      f.email, f.phone, COALESCE(f.location_consent, 0) AS location_consent,
+                      COALESCE(f.email_consent, 0) AS email_consent
                FROM employees e LEFT JOIN employee_flags f ON f.user_id = e.user_id
                WHERE e.location_id = ? ORDER BY e.user_id""",
             (loc["location_id"],),
@@ -1150,13 +1189,62 @@ def queue_notification(conn, kind, user_id, channel, message, recommendation_id=
     return row[0] if row else None
 
 
-def deliver(notification_id, kind, user_id, channel, message):
-    """Hand one notification to the real sender. Stays 'simulated' until NOTIFY_WEBHOOK_URL is set.
+def deliver_smtp_email(notification_id, user_id, kind, message):
+    status = "failed"
+    error = None
+    if not all((SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM_ADDRESS)):
+        error = "SMTP configuration is incomplete."
+    else:
+        with get_db() as conn:
+            recipient = conn.execute(
+                "SELECT email, email_consent FROM employee_flags WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+        address = recipient["email"].strip() if recipient and recipient["email"] else ""
+        if not recipient or not recipient["email_consent"] or not address:
+            error = "Recipient has not opted in to email or has no email address on file."
+        elif not valid_email_address(address):
+            error = "Recipient email address is invalid."
+        else:
+            email = EmailMessage()
+            email["From"] = SMTP_FROM_ADDRESS
+            email["To"] = address
+            email["Subject"] = f"Fieldcast safety alert: {kind.replace('_', ' ')}"
+            email.set_content(message)
+            try:
+                with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+                    server.ehlo()
+                    server.starttls(context=ssl.create_default_context())
+                    server.ehlo()
+                    server.login(SMTP_USERNAME, SMTP_PASSWORD)
+                    refused = server.send_message(email)
+                    if refused:
+                        error = "Gmail SMTP refused the recipient address."
+                    else:
+                        status = "sent"
+            except (smtplib.SMTPException, OSError, TimeoutError) as err:
+                error = f"Email delivery failed ({type(err).__name__}). Check SMTP settings and Gmail app password."
 
-    The webhook receives {"notificationId", "kind", "userId", "channels": [...], "message"} and
-    is where you plug in your push (Expo/FCM/APNs), SMS (Twilio) or email provider. Delivery
-    never runs inside a database transaction, so a slow provider can't lock the database.
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE notifications SET status = ?, delivery_attempted_at = ?, delivery_error = ? "
+            "WHERE id = ?",
+            (status, now_iso(), error, notification_id),
+        )
+    return status
+
+
+def deliver(notification_id, kind, user_id, channel, message):
+    """Hand one notification to Gmail SMTP or the configured webhook, or record simulation.
+
+    The webhook receives {"notificationId", "kind", "userId", "channels": [...], "message"}.
+    Delivery never runs inside a database transaction, so a slow provider can't lock the database.
     """
+    channels = channel.split(",")
+    smtp_configured = all((SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM_ADDRESS))
+    smtp_partially_configured = any((SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM_ADDRESS))
+    if "email" in channels and (smtp_configured or smtp_partially_configured):
+        return deliver_smtp_email(notification_id, user_id, kind, message)
     if not NOTIFY_WEBHOOK_URL:
         return "simulated"
     headers = {"Content-Type": "application/json"}
@@ -1167,10 +1255,15 @@ def deliver(notification_id, kind, user_id, channel, message):
     try:
         with urlopen(Request(NOTIFY_WEBHOOK_URL, data=body, headers=headers, method="POST"), timeout=10):
             status = "sent"
-    except (URLError, TimeoutError, OSError):
+        error = None
+    except (HTTPError, URLError, TimeoutError, OSError) as err:
         status = "failed"
+        error = f"Notification webhook request failed ({type(err).__name__})."
     with get_db() as conn:
-        conn.execute("UPDATE notifications SET status = ? WHERE id = ?", (status, notification_id))
+        conn.execute(
+            "UPDATE notifications SET status = ?, delivery_attempted_at = ?, delivery_error = ? WHERE id = ?",
+            (status, now_iso(), error, notification_id),
+        )
     return status
 
 
@@ -1257,9 +1350,16 @@ def process_location(user_id, lat, lon):
         # Step 1: the immediate alert, once per person per NWS alert.
         message = compose_personal_message(alert)
         with get_db() as conn:
-            notif_id = queue_notification(conn, "personal", user_id, "push", message, alert_id=alert["id"])
+            preferences = conn.execute(
+                "SELECT email, COALESCE(email_consent, 0) AS email_consent "
+                "FROM employee_flags WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+        channel = "email" if preferences and preferences["email"] and preferences["email_consent"] else "app"
+        with get_db() as conn:
+            notif_id = queue_notification(conn, "personal", user_id, channel, message, alert_id=alert["id"])
         if notif_id:
-            status = deliver(notif_id, "personal", user_id, "push", message)
+            status = deliver(notif_id, "personal", user_id, channel, message)
             append_log("personal_alert", {"userId": user_id, "alertId": alert["id"],  # no coordinates
                                           "event": alert.get("event"), "severity": alert.get("severity"),
                                           "snapshotId": result["snapshotId"]})
@@ -1280,10 +1380,17 @@ def process_location(user_id, lat, lon):
             continue
         shelter_message = compose_shelter_message(alert, shelter_result["shelters"])
         with get_db() as conn:
-            shelter_notif_id = queue_notification(conn, "shelter", user_id, "push", shelter_message,
+            preferences = conn.execute(
+                "SELECT email, COALESCE(email_consent, 0) AS email_consent "
+                "FROM employee_flags WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+        channel = "email" if preferences and preferences["email"] and preferences["email_consent"] else "app"
+        with get_db() as conn:
+            shelter_notif_id = queue_notification(conn, "shelter", user_id, channel, shelter_message,
                                                   alert_id=followup_key)
         if shelter_notif_id:
-            status = deliver(shelter_notif_id, "shelter", user_id, "push", shelter_message)
+            status = deliver(shelter_notif_id, "shelter", user_id, channel, shelter_message)
             append_log("shelter_followup", {"userId": user_id, "alertId": alert["id"],
                                             "shelterCount": len(shelter_result["shelters"])})
             new_notifications.append({"alertId": followup_key, "kind": "shelter", "event": alert.get("event"),
@@ -1540,6 +1647,7 @@ ROUTES = [(m, re.compile(p), name, access) for m, p, name, access in [
     ("GET", r"/api/alerts", "h_alerts", "auth"),
     ("GET", r"/api/shelters", "h_shelters", "auth"),
     ("GET", r"/api/my/shelters", "h_my_shelters", "auth"),
+    ("GET", r"/api/admin/notifications", "h_notifications_list", "manager"),
     ("GET", r"/api/snapshots", "h_snapshots", "manager"),
     ("GET", r"/api/snapshots/(\d+)", "h_snapshot_detail", "manager"),
     ("GET", r"/api/recommendations", "h_rec_list", "manager"),
@@ -1549,6 +1657,7 @@ ROUTES = [(m, re.compile(p), name, access) for m, p, name, access in [
     ("POST", r"/api/admin/employees/import", "h_employees_import", "manager"),
     ("POST", r"/api/admin/employees/contacts", "h_employees_contacts", "manager"),
     ("POST", r"/api/location/consent", "h_consent", "auth"),
+    ("POST", r"/api/notifications/consent", "h_notifications_consent", "auth"),
     ("POST", r"/api/location", "h_location_update", "auth"),
     ("GET", r"/api/my/notifications", "h_my_notifications", "auth"),
     ("GET", r"/api/decision-log", "h_log", "manager"),
@@ -1602,10 +1711,18 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
 
     # ----- basic -----
     def h_health(self, employee, query):
+        has_smtp_settings = any((SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM_ADDRESS))
+        if all((SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM_ADDRESS)):
+            delivery = "smtp"
+        elif has_smtp_settings:
+            delivery = "configuration_error"
+        elif NOTIFY_WEBHOOK_URL:
+            delivery = "webhook"
+        else:
+            delivery = "simulated"
         self.send_json({"status": "ok", "storage": "postgres", "time": now_iso(),
                         "autoScanMinutes": AUTO_SCAN_MINUTES, "autoDecide": AUTO_DECIDE,
-                        "allClear": ALL_CLEAR,
-                        "delivery": "webhook" if NOTIFY_WEBHOOK_URL else "simulated"})
+                        "allClear": ALL_CLEAR, "delivery": delivery})
 
     def h_login(self, employee, query):
         client = (self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
@@ -1633,7 +1750,8 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
         with get_db() as conn:
             row = conn.execute(
                 "SELECT e.user_id, e.full_name, e.location_id, e.shift_start, e.shift_end, e.days_of_week, "
-                "COALESCE(f.location_consent, 0) AS consent "
+                "COALESCE(f.location_consent, 0) AS consent, "
+                "COALESCE(f.email_consent, 0) AS email_consent, f.email "
                 "FROM employees e LEFT JOIN employee_flags f ON f.user_id = e.user_id WHERE e.user_id = ?",
                 (employee["user_id"],),
             ).fetchone()
@@ -1641,6 +1759,8 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
                         "locationId": row["location_id"], "shiftStart": row["shift_start"],
                         "shiftEnd": row["shift_end"], "daysOfWeek": row["days_of_week"],
                         "locationSharing": bool(row["consent"]),
+                        "email": row["email"],
+                        "emailAlerts": bool(row["email_consent"]),
                         "isManager": row["user_id"] in MANAGER_IDS})
 
     # ----- roster (dashboard) -----
@@ -1911,7 +2031,19 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
             row = conn.execute("SELECT lat, lon, updated_at FROM employee_location WHERE user_id = ?",
                                (employee["user_id"],)).fetchone()
         if row is None:
-            self.send_json({"error": "No shared location yet. Turn on location sharing in the mobile app."},
+            self.send_json({"error": "No shared location yet. Turn on location sharing in the employee portal."},
+                           status=404)
+            return
+        try:
+            updated_at = datetime.fromisoformat(row["updated_at"])
+        except ValueError:
+            updated_at = datetime.min.replace(tzinfo=timezone.utc)
+        if updated_at.tzinfo is None:
+            updated_at = updated_at.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - updated_at > timedelta(hours=LOCATION_TTL_HOURS):
+            with get_db() as conn:
+                conn.execute("DELETE FROM employee_location WHERE user_id = ?", (employee["user_id"],))
+            self.send_json({"error": "Your shared location has expired. Reopen the employee portal to refresh it."},
                            status=404)
             return
         result = fetch_shelters(row["lat"], row["lon"])
@@ -2021,6 +2153,30 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
                 conn.execute("DELETE FROM employee_location WHERE user_id = ?", (employee["user_id"],))
         self.send_json({"locationSharing": consent})
 
+    def h_notifications_consent(self, employee, query):
+        payload = self.read_json_object()
+        if payload is None:
+            return
+        consent = payload.get("emailAlerts")
+        if not isinstance(consent, bool):
+            self.send_json({"error": "emailAlerts must be true or false."}, status=400)
+            return
+        with get_db() as conn:
+            recipient = conn.execute(
+                "SELECT email FROM employee_flags WHERE user_id = ?",
+                (employee["user_id"],),
+            ).fetchone()
+            if consent and (not recipient or not valid_email_address(recipient["email"])):
+                self.send_json({"error": "Add a valid email address to your employee profile before opting in."},
+                               status=400)
+                return
+            conn.execute(
+                "INSERT INTO employee_flags (user_id, email_consent) VALUES (?, ?) "
+                "ON CONFLICT (user_id) DO UPDATE SET email_consent = excluded.email_consent",
+                (employee["user_id"], 1 if consent else 0),
+            )
+        self.send_json({"emailAlerts": consent})
+
     def h_location_update(self, employee, query):
         payload = self.read_json_object()
         if payload is None:
@@ -2050,10 +2206,22 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
 
     def h_my_notifications(self, employee, query):
         with get_db() as conn:
-            rows = conn.execute("SELECT id, created_at, kind, alert_id, channel, message, status "
+            rows = conn.execute("SELECT id, created_at, kind, alert_id, channel, message, status, "
+                                "delivery_attempted_at, delivery_error "
                                 "FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT 20",
                                 (employee["user_id"],)).fetchall()
         self.send_json([dict(r) for r in rows])
+
+    def h_notifications_list(self, employee, query):
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT n.id, n.created_at, n.delivery_attempted_at, n.delivery_error, n.kind, n.user_id, "
+                "e.full_name AS employee_name, "
+                "n.channel, n.message, n.status "
+                "FROM notifications n JOIN employees e ON e.user_id = n.user_id "
+                "ORDER BY n.id DESC LIMIT 200"
+            ).fetchall()
+        self.send_json([dict(row) for row in rows])
 
     # ----- decision log -----
     def h_log(self, employee, query):
@@ -2140,6 +2308,7 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
 
 def main():
     init_db()
+    Thread(target=location_cleanup_loop, daemon=True).start()
     if AUTO_SCAN_MINUTES > 0:
         Thread(target=scan_loop, daemon=True).start()
     server = ThreadingHTTPServer((HOST, PORT), ClosureCallHandler)
@@ -2148,7 +2317,13 @@ def main():
     print(f"Facility auto-scan: {'every %d min' % AUTO_SCAN_MINUTES if AUTO_SCAN_MINUTES else 'off'}")
     print(f"Auto-send without manager approval: {'ON (min confidence ' + AUTO_DECIDE_MIN_CONFIDENCE + ')' if AUTO_DECIDE else 'off'}")
     print(f"All-clear messages: {'ON (hold ' + str(ALL_CLEAR_HOLD_MINUTES) + ' min)' if ALL_CLEAR else 'off'}")
-    print(f"Notification delivery: {'webhook' if NOTIFY_WEBHOOK_URL else 'simulated (no NOTIFY_WEBHOOK_URL)'}")
+    if all((SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM_ADDRESS)):
+        delivery_mode = "Gmail SMTP"
+    elif any((SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM_ADDRESS)):
+        delivery_mode = "misconfigured SMTP"
+    else:
+        delivery_mode = "webhook" if NOTIFY_WEBHOOK_URL else "simulated (no provider configured)"
+    print(f"Notification delivery: {delivery_mode}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
