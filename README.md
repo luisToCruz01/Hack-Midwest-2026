@@ -19,14 +19,21 @@ python backend/server.py
 Open <http://127.0.0.1:3000>. Set the `PORT` environment variable to use a
 different port.
 
-To run the standalone read-only API for the mobile app, start a second server:
+To run the separate read-only roster API, start a second server:
 
 ```powershell
 python backend/mobile_api.py
 ```
 
 It listens on <http://127.0.0.1:3001> by default. Set `MOBILE_API_HOST` or
-`MOBILE_API_PORT` to change its bind address or port.
+`MOBILE_API_PORT` to change its bind address or port. This read-only endpoint is
+not used by the native employee app.
+
+The native employee app is in `mobile/`. It signs in with an employee ID,
+requests consent for background location sharing, and posts locations to the
+main backend to check for personal NWS alerts. See [mobile/README.md](mobile/README.md)
+for setup. ID-only sign-in and local notifications are prototype behavior;
+production authentication and remote push delivery are not configured.
 
 The Employees page reads the employee roster from SQLite through
 `GET /api/employees`. Employee details shown there come from the database;
