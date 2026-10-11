@@ -860,6 +860,15 @@ h3 { font-size: 1.15rem; font-weight: 500; letter-spacing: -0.01em; }
 .thresholds td:first-child { font-weight: 500; white-space: nowrap; }
 .thresholds td:last-child { color: var(--muted); }
 
+/* thresholds section — Golf Nation palette: charcoal, flat square boxes, greys */
+.thresholds-sec { background: #222; }
+.thresholds-sec .eyebrow { background: #1e1e1e; box-shadow: none; border-radius: 0; }
+.thresholds-sec .bezel { padding: 0; border-radius: 0; background: none; box-shadow: none; }
+.thresholds-sec .bezel-core { border-radius: 0; background: #1e1e1e; box-shadow: none; }
+.thresholds-sec .thresholds td { border-top-color: #383838; }
+.thresholds-sec .thresholds tbody tr { transition: background-color 300ms var(--ease); }
+.thresholds-sec .thresholds tbody tr:hover { background: #2a2a2a; }
+
 /* CTA */
 .cta { text-align: center; overflow: hidden; }
 .cta-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
