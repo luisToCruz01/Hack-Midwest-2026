@@ -3,7 +3,7 @@ services:
     name: fieldcast
     runtime: python
     plan: starter
-    buildCommand: python -m compileall backend
+    buildCommand: python -m pip install --upgrade pip && python -m pip install -r requirements.txt && python -m compileall backend
     startCommand: python backend/server.py
     healthCheckPath: /api/health
     envVars:
@@ -11,6 +11,8 @@ services:
         value: 0.0.0.0
       - key: DB_PATH
         value: /var/data/closure_call.db
+      - key: DATABASE_URL
+        sync: false
     disk:
       name: fieldcast-data
       mountPath: /var/data

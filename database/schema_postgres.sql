@@ -1,5 +1,3 @@
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE IF NOT EXISTS locations (
   location_id INTEGER PRIMARY KEY CHECK (location_id BETWEEN 1 AND 200),
   name TEXT NOT NULL UNIQUE,
@@ -214,12 +212,14 @@ ON CONFLICT(location_id) DO UPDATE SET
 
 CREATE TABLE IF NOT EXISTS employees (
   user_id TEXT PRIMARY KEY
-    CHECK (length(user_id) = 6 AND user_id NOT GLOB '*[^0-9]*'),
+    CHECK (user_id ~ '^[0-9]{6}$'),
   location_id INTEGER NOT NULL REFERENCES locations(location_id),
   full_name TEXT NOT NULL,
   phone_number TEXT NOT NULL CHECK (length(phone_number) > 0),
-  shift_start TEXT NOT NULL CHECK (time(shift_start) IS NOT NULL),
-  shift_end TEXT NOT NULL CHECK (time(shift_end) IS NOT NULL),
+  shift_start TEXT NOT NULL
+    CHECK (shift_start ~ '^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$'),
+  shift_end TEXT NOT NULL
+    CHECK (shift_end ~ '^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$'),
   days_of_week TEXT NOT NULL CHECK (
     days_of_week IN (
       'Mon-Fri',
@@ -230,7 +230,7 @@ CREATE TABLE IF NOT EXISTS employees (
       'Sun-Thu'
     )
   ),
-  CHECK (time(shift_end) > time(shift_start))
+  CHECK (shift_end::time > shift_start::time)
 );
 
 INSERT INTO employees (
@@ -378,16 +378,13 @@ INSERT INTO employees (
   shift_start, shift_end, days_of_week
 )
 SELECT
-  printf('%06d', 99999 + person_number),
+  lpad((99999 + person_number)::text, 6, '0'),
   2 + ((person_number - 1) / 30),
   full_name,
-  printf(
-    '202-555-%04d ext. %04d',
-    100 + ((person_number - 1) % 100),
-    30 + person_number
-  ),
-  strftime('%H:%M', shifts.start_time),
-  strftime('%H:%M', shifts.start_time, '+8 hours', '+30 minutes'),
+  '202-555-' || lpad((100 + ((person_number - 1) % 100))::text, 4, '0')
+    || ' ext. ' || lpad((30 + person_number)::text, 4, '0'),
+  to_char(shifts.start_time::time, 'HH24:MI'),
+  to_char(shifts.start_time::time + interval '8 hours 30 minutes', 'HH24:MI'),
   workdays.days
 FROM numbered_names
 JOIN shifts ON shifts.shift_number = person_number % 17

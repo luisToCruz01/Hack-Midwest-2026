@@ -33,7 +33,11 @@
       "Bash(python shot.py http://127.0.0.1:3000/landing/ hero)",
       "Bash(git add *)",
       "Bash(git commit -q -m 'Replace landing hero with layered forest scene *)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:3000/landing/)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:3000/landing/)",
+      "Read(//c/Users/luisc/Desktop/framer-mirrors/6-black-arrow/**)",
+      "Bash(awk '{print}')",
+      "Bash(ffmpeg -loglevel error -y -i C:/Users/luisc/Desktop/framer-mirrors/6-black-arrow/_m/framerusercontent.com/images/ztPzzNeyjdI13f7HoITOWG5b4.jpg -vf scale=2400:-1 -c:v libwebp -quality 80 assets/rain-bg.webp)",
+      "Bash(ffmpeg -loglevel error -y -i C:/Users/luisc/Desktop/framer-mirrors/6-black-arrow/_m/framerusercontent.com/images/ztPzzNeyjdI13f7HoITOWG5b4.jpg -vf scale=1600:-1 -c:v libwebp -quality 70 assets/rain-bg.webp)"
     ]
   }
 }
