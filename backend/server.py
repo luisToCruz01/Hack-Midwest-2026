@@ -1604,6 +1604,18 @@ class ClosureCallHandler(SimpleHTTPRequestHandler):
                 self.send_header("Location", "/landing/")
                 self.end_headers()
                 return
+            if route in ("/dashboard", "/index.html"):
+                employee = self.current_employee()
+                if employee is None:
+                    self.send_response(302)
+                    self.send_header("Location", "/login.html")
+                    self.end_headers()
+                    return
+                if employee["user_id"] not in MANAGER_IDS:
+                    self.send_response(302)
+                    self.send_header("Location", "/employee.html")
+                    self.end_headers()
+                    return
             if route == "/dashboard":
                 self.path = "/index.html"
             super().do_GET()

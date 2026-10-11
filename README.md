@@ -36,6 +36,13 @@ main backend to check for personal NWS alerts. See [mobile/README.md](mobile/REA
 for setup. ID-only sign-in and local notifications are prototype behavior;
 production authentication and remote push delivery are not configured.
 
+Employees can also sign in from the website at `/login.html`. Employee accounts
+open the web employee portal at `/employee.html`, where they can see their work
+schedule and personal alerts. Optional browser location sharing requires explicit
+permission and only sends updates while the portal remains open; background
+sharing requires the native mobile app. Manager accounts continue to open the
+admin dashboard.
+
 The Employees page reads the employee roster from SQLite through
 `GET /api/employees`. Employee details shown there come from the database;
 working/off-shift status is calculated from each employee's workdays and shift

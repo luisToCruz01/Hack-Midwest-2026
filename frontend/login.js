@@ -15,12 +15,8 @@ loginForm.addEventListener("submit", async (event) => {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || `Login failed with HTTP ${response.status}.`);
-    if (!result.isManager) {
-      throw new Error("This account does not have administrator access.");
-    }
-
     localStorage.setItem("fieldcastSessionToken", result.token);
-    window.location.assign("./index.html");
+    window.location.assign(result.isManager ? "./index.html" : "./employee.html");
   } catch (error) {
     loginFeedback.textContent = error instanceof Error ? error.message : "Unable to sign in.";
     submitButton.disabled = false;
