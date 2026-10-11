@@ -375,7 +375,6 @@
         <div class="notify-shade" aria-hidden="true"></div>
         <div class="container notify-inner">
           <div class="notify-head">
-            <p class="notify-chip reveal"><span aria-hidden="true"></span>The notification package</p>
             <h2 class="reveal">Right people. Right channel. <em>And a reason for everyone left out.</em></h2>
           </div>
           <ul class="notify-cards">
@@ -448,7 +447,12 @@
               so a recommendation can be defended to leadership, to employees, and after the fact.</p>
           </div>
           <div class="bezel reveal">
-            <div class="bezel-core table-wrap">
+            <div class="bezel-core">
+              <div class="th-card-head">
+                <p class="th-card-title">Threshold anchors</p>
+                <p class="th-card-sub">Six signals, each tied to a published standard</p>
+              </div>
+              <div class="table-wrap">
               <table class="thresholds">
                 <thead>
                   <tr><th>Signal</th><th>Anchor</th><th>Where it comes from</th></tr>
@@ -486,6 +490,7 @@
                   </tr>
                 </tbody>
               </table>
+              </div>
             </div>
           </div>
         </div>
@@ -512,11 +517,47 @@
     </main>
 
     <footer class="footer">
-      <div class="container footer-inner">
-        <p class="brand"><span>Fieldcast</span></p>
-        <p class="small muted">Built at Hack Midwest 2026 for the USDA facility closure challenge.
-          Weather data from the <a href="https://www.weather.gov/documentation/services-web-api" target="_blank" rel="noopener">National Weather Service API</a>.
-          Facility and employee data shown here is synthetic.</p>
+      <div class="container">
+        <div class="footer-cols">
+          <div>
+            <p class="footer-head">Product</p>
+            <ul>
+              <li><a href="#how">How it works</a></li>
+              <li><a href="#postures">Postures</a></li>
+              <li><a href="#notify">Notification</a></li>
+              <li><a href="#log">Decision log</a></li>
+            </ul>
+          </div>
+          <div>
+            <p class="footer-head">Data sources</p>
+            <ul>
+              <li><a href="https://www.weather.gov/documentation/services-web-api" target="_blank" rel="noopener">NWS API</a></li>
+              <li><a href="https://www.airnow.gov/" target="_blank" rel="noopener">AirNow</a></li>
+              <li><a href="https://www.opm.gov/policy-data-oversight/snow-dismissal-procedures/" target="_blank" rel="noopener">OPM operating status</a></li>
+              <li><a href="#thresholds">Thresholds</a></li>
+            </ul>
+          </div>
+          <div>
+            <p class="footer-head">Get started</p>
+            <ul>
+              <li><a href="../login.html">Open dashboard</a></li>
+              <li><a href="../login.html">Log in</a></li>
+              <li><a href="#top">Back to top</a></li>
+            </ul>
+          </div>
+          <div>
+            <p class="footer-head">About</p>
+            <ul>
+              <li><span>Hack Midwest 2026</span></li>
+              <li><span>USDA facility closure challenge</span></li>
+              <li><span>Facility and employee data is synthetic</span></li>
+            </ul>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <p>© 2026 Fieldcast. Built at Hack Midwest 2026.</p>
+          <p>Weather data from the National Weather Service</p>
+        </div>
       </div>
     </footer>
   </body>
