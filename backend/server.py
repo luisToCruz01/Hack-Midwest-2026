@@ -95,17 +95,17 @@ from psycopg_pool import ConnectionPool
 # ======================================================================
 
 def load_env_file():
-    """Read KEY=value lines from backend/.env (if it exists) into the environment.
-    Real environment variables win, so settings on Render are never overridden."""
-    path = Path(__file__).resolve().parent / ".env"
-    if not path.exists():
-        return
-    for line in path.read_text(encoding="utf-8-sig").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
+    """Read backend/.env and the project-root .env, without overriding real env vars."""
+    backend_directory = Path(__file__).resolve().parent
+    for path in (backend_directory / ".env", backend_directory.parent / ".env"):
+        if not path.exists():
             continue
-        key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+        for line in path.read_text(encoding="utf-8-sig").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
 load_env_file()  # must run before the settings below are read
